@@ -1,11 +1,7 @@
 import 'package:dart_scheme/dart_scheme/numbers.dart';
 import 'package:petitparser/petitparser.dart';
 
-class Pos {
-  int index;
-
-  Pos(this.index);
-}
+enum Exactness { exact, inexact }
 
 class Pair {
   dynamic cons;

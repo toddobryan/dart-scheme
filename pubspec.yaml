@@ -8,6 +8,7 @@ environment:
 
 # Add regular dependencies here.
 dependencies:
+  big_decimal: ^0.5.0
   path: ^1.9.0
   petitparser: ^7.0.1
 

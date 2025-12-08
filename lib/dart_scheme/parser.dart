@@ -1,5 +1,12 @@
+import 'package:big_decimal/big_decimal.dart';
 import 'package:dart_scheme/dart_scheme/ast.dart';
+import 'package:dart_scheme/dart_scheme/error_messages.dart' as err;
+import 'package:dart_scheme/dart_scheme/numbers.dart';
 import 'package:petitparser/petitparser.dart';
+
+extension MapToParser<T1, T2> on Parser<T1> {
+  Parser<T2> mapTo(T2 value) => map((t) => value);
+}
 
 class SchemeGrammar extends GrammarDefinition {
   @override
@@ -13,22 +20,12 @@ class SchemeGrammar extends GrammarDefinition {
     ref(command),
     ref(definition),
     ref(syntaxDefinition),
-    [
-      ref0(lParen),
-      ref0(begin),
-      ref0(commandOrDefinition).plus(),
-    ].toSequenceParser(),
+    seq3(lParen(), begin(), ref0(commandOrDefinition).plus()),
   ].toChoiceParser();
 
   Parser definition() => [
-    [
-      lParen(),
-      ref0(define),
-      ref0(variable),
-      ref0(expression).trim(),
-      ref0(rParen),
-    ].toSequenceParser(),
-    [
+    seq5(lParen(), define(), variable(), ref0(expression).trim(), ref0(rParen)),
+    seq8(
       lParen(),
       define(),
       lParen(),
@@ -37,55 +34,42 @@ class SchemeGrammar extends GrammarDefinition {
       rParen(),
       ref0(body),
       rParen(),
-    ].toSequenceParser(),
-    [lParen(), begin(), ref0(definition).star()].toSequenceParser(),
+    ),
+    seq4(lParen(), begin(), ref0(definition).star(), rParen()),
   ].toChoiceParser();
 
-  Parser defFormals() => [
-    ref0(variable).star(),
-    [dot(), ref0(variable)].toSequenceParser().optional(),
-  ].toSequenceParser();
+  Parser defFormals() =>
+      seq2(variable().star(), seq2(dot(), variable()).optional());
 
-  Parser syntaxDefinition() => [
+  Parser syntaxDefinition() => seq5(
     lParen(),
     defineSyntax(),
     keyword(),
     ref0(transformerSpec),
     rParen(),
-  ].toSequenceParser();
+  );
 
   // 7.1.5 Transformers
 
-  Parser transformerSpec() => [
+  Parser transformerSpec() => seq6(
     lParen(),
     syntaxRules(),
     lParen(),
     identifier().star(),
     ref0(syntaxRule).star(),
     rParen(),
-  ].toSequenceParser();
+  );
 
   Parser syntaxRule() =>
-      [lParen(), ref0(sPattern), ref0(template), rParen()].toSequenceParser();
+      seq4(lParen(), ref0(sPattern), ref0(template), rParen());
 
   Parser sPattern() => [
     patternIdentifier(),
-    [lParen(), ref0(sPattern).star(), rParen()].toSequenceParser(),
-    [
-      lParen(),
-      ref0(sPattern).plus(),
-      dot(),
-      ref0(sPattern),
-      rParen(),
-    ].toSequenceParser(),
-    [lParen(), ref0(sPattern).plus(), ellipsis(), rParen()].toSequenceParser(),
-    [hashParen(), ref0(sPattern).star(), rParen()].toSequenceParser(),
-    [
-      hashParen(),
-      ref0(sPattern).plus(),
-      ellipsis(),
-      rParen(),
-    ].toSequenceParser(),
+    seq3(lParen(), ref0(sPattern).star(), rParen()),
+    seq5(lParen(), ref0(sPattern).plus(), dot(), ref0(sPattern), rParen()),
+    seq4(lParen(), ref0(sPattern).plus(), ellipsis(), rParen()),
+    seq3(hashParen(), ref0(sPattern).star(), rParen()),
+    seq4(hashParen(), ref0(sPattern).plus(), ellipsis(), rParen()),
     ref0(patternDatum),
   ].toChoiceParser();
 
@@ -94,22 +78,20 @@ class SchemeGrammar extends GrammarDefinition {
 
   Parser template() => [
     patternIdentifier(),
-    [lParen(), ref0(templateElement).star(), rParen()].toSequenceParser(),
-    [
+    seq3(lParen(), ref0(templateElement).star(), rParen()),
+    seq5(
       lParen(),
       ref0(templateElement).plus(),
       dot(),
       ref0(template),
       rParen(),
-    ].toSequenceParser(),
-    [hashParen(), ref0(templateElement).star(), rParen()].toSequenceParser(),
+    ),
+    seq3(hashParen(), ref0(templateElement).star(), rParen()),
     ref0(templateDatum),
   ].toChoiceParser();
 
-  Parser templateElement() => [
-    ref0(template),
-    [ref0(template), ellipsis()].toSequenceParser(),
-  ].toChoiceParser();
+  Parser templateElement() =>
+      [ref0(template), seq2(ref0(template), ellipsis())].toChoiceParser();
 
   Parser templateDatum() => ref0(patternDatum);
 
@@ -118,13 +100,8 @@ class SchemeGrammar extends GrammarDefinition {
   // 7.1.4 Quasiquotations
 
   Parser quasiquotation(int depth) => [
-    [backtick(), ref1(qqTemplate, depth)].toSequenceParser(),
-    [
-      lParen(),
-      quasiquote(),
-      ref1(qqTemplate, depth),
-      rParen(),
-    ].toSequenceParser(),
+    seq2(backtick(), ref1(qqTemplate, depth)),
+    seq4(lParen(), quasiquote(), ref1(qqTemplate, depth), rParen()),
   ].toChoiceParser();
 
   Parser qqTemplate(int depth) {
@@ -141,36 +118,24 @@ class SchemeGrammar extends GrammarDefinition {
   }
 
   Parser listQqTemplate(int depth) => [
-    [
-      lParen(),
-      ref1(qqTemplateOrSplice, depth).star(),
-      rParen(),
-    ].toSequenceParser(),
-    [
+    seq3(lParen(), ref1(qqTemplateOrSplice, depth).star(), rParen()),
+    seq5(
       lParen(),
       ref1(qqTemplateOrSplice, depth).plus(),
       dot(),
       ref1(qqTemplate, depth),
       rParen(),
-    ].toSequenceParser(),
-    [quote(), ref1(qqTemplate, depth)].toSequenceParser(),
+    ),
+    seq2(quote(), ref1(qqTemplate, depth)),
     ref1(quasiquotation, depth + 1),
   ].toChoiceParser();
 
-  Parser vectorQqTemplate(int depth) => [
-    hashParen(),
-    ref1(qqTemplateOrSplice, depth).star(),
-    rParen(),
-  ].toSequenceParser();
+  Parser vectorQqTemplate(int depth) =>
+      seq3(hashParen(), ref1(qqTemplateOrSplice, depth).star(), rParen());
 
   Parser unquotation(int depth) => [
-    [comma(), ref1(qqTemplate, depth - 1)].toSequenceParser(),
-    [
-      lParen(),
-      unquote(),
-      ref1(qqTemplate, depth - 1),
-      rParen(),
-    ].toSequenceParser(),
+    seq2(comma(), ref1(qqTemplate, depth - 1)),
+    seq4(lParen(), unquote(), ref1(qqTemplate, depth - 1), rParen()),
   ].toChoiceParser();
 
   Parser qqTemplateOrSplice(int depth) => [
@@ -179,19 +144,14 @@ class SchemeGrammar extends GrammarDefinition {
   ].toChoiceParser();
 
   Parser splicingUnquotation(int depth) => [
-    [commaAt(), ref1(qqTemplate, depth - 1)].toSequenceParser(),
-    [
-      lParen(),
-      unquoteSplicing(),
-      ref1(qqTemplate, depth - 1),
-      rParen(),
-    ].toSequenceParser(),
+    seq2(commaAt(), ref1(qqTemplate, depth - 1)),
+    seq4(lParen(), unquoteSplicing(), ref1(qqTemplate, depth - 1), rParen()),
   ].toChoiceParser();
 
   // 7.1.3 Expressions
 
   Parser expression() => [
-    ref0(variable),
+    variable(),
     ref0(literal),
     ref0(procedureCall),
     ref0(lambdaExpression),
@@ -211,55 +171,34 @@ class SchemeGrammar extends GrammarDefinition {
   ].toChoiceParser();
 
   Parser quotation() => [
-    [ref0(quote), ref0(datum)].toSequenceParser(),
-    [ref0(lParen), ref0(quote), ref0(datum), ref0(rParen)].toSequenceParser(),
+    seq2(ref0(quote), ref0(datum)),
+    seq4(lParen(), ref0(quote), ref0(datum), ref0(rParen)),
   ].toChoiceParser();
 
-  Parser procedureCall() => [
-    ref0(lParen),
-    ref0(operator),
-    ref0(operand).star(),
-    ref0(rParen),
-  ].toSequenceParser();
+  Parser procedureCall() =>
+      seq4(lParen(), ref0(operator), ref0(operand).star(), ref0(rParen));
 
   Parser operator() => ref0(expression);
 
   Parser operand() => ref0(expression);
 
-  Parser lambdaExpression() => [
-    ref0(lParen),
-    ref0(lambda),
-    ref0(formals),
-    ref0(body),
-    ref0(rParen),
-  ].toSequenceParser();
+  Parser lambdaExpression() =>
+      seq5(lParen(), ref0(lambda), ref0(formals), ref0(body), ref0(rParen));
 
   Parser formals() => [
-    [ref0(lParen), ref0(variable).star(), ref0(rParen)].toSequenceParser(),
-    ref0(variable),
-    [
-      ref0(lParen),
-      ref0(variable).plus(),
-      ref0(dot),
-      ref0(variable),
-      ref0(rParen),
-    ].toSequenceParser(),
+    seq3(lParen(), variable().star(), ref0(rParen)),
+    variable(),
+    seq5(lParen(), variable().plus(), ref0(dot), variable(), ref0(rParen)),
   ].toChoiceParser();
 
-  Parser body() => [ref0(definition).star(), ref0(sequence)].toSequenceParser();
+  Parser body() => seq2(ref0(definition).star(), ref0(sequence));
 
-  Parser sequence() =>
-      [ref0(command).star(), ref0(expression)].toSequenceParser();
+  Parser sequence() => seq2(ref0(command).star(), ref0(expression));
 
   Parser command() => ref0(expression);
 
-  Parser conditional() => [
-    lParen(),
-    ref0(test),
-    ref0(consequent),
-    ref0(alternate),
-    rParen(),
-  ].toSequenceParser();
+  Parser conditional() =>
+      seq5(lParen(), ref0(test), ref0(consequent), ref0(alternate), rParen());
 
   Parser test() => ref0(expression);
 
@@ -267,21 +206,15 @@ class SchemeGrammar extends GrammarDefinition {
 
   Parser alternate() => ref0(expression).optional();
 
-  Parser assignment() => [
-    lParen(),
-    setBang(),
-    ref0(variable),
-    ref0(expression),
-    rParen(),
-  ].toSequenceParser();
+  Parser assignment() =>
+      seq5(lParen(), setBang(), variable(), ref0(expression), rParen());
 
   // derived expressions come here
 
-  Parser macroUse() =>
-      [lParen(), keyword(), ref0(datum).star()].toSequenceParser();
+  Parser macroUse() => seq3(lParen(), keyword(), ref0(datum).star());
 
   Parser macroBlock() => [
-    [
+    seq7(
       lParen(),
       letSyntax(),
       lParen(),
@@ -289,8 +222,8 @@ class SchemeGrammar extends GrammarDefinition {
       rParen(),
       ref0(body),
       rParen(),
-    ].toSequenceParser(),
-    [
+    ),
+    seq7(
       lParen(),
       letrecSyntax(),
       lParen(),
@@ -298,11 +231,11 @@ class SchemeGrammar extends GrammarDefinition {
       rParen(),
       ref0(body),
       rParen(),
-    ].toSequenceParser(),
+    ),
   ].toChoiceParser();
 
   Parser syntaxSpec() =>
-      [lParen(), keyword(), ref0(transformerSpec), rParen()].toSequenceParser();
+      seq4(lParen(), keyword(), ref0(transformerSpec), rParen());
 
   Parser keyword() => identifier();
 
@@ -318,24 +251,17 @@ class SchemeGrammar extends GrammarDefinition {
   Parser compoundDatum() => [ref0(list), ref0(vector)].toChoiceParser();
 
   Parser list() => [
-    [lParen(), ref0(datum).star(), rParen()].toSequenceParser(),
-    [
-      lParen(),
-      ref0(datum).plus(),
-      dot(),
-      ref0(datum),
-      rParen(),
-    ].toSequenceParser(),
+    seq3(lParen(), ref0(datum).star(), rParen()),
+    seq5(lParen(), ref0(datum).plus(), dot(), ref0(datum), rParen()),
     ref0(abbreviation),
   ].toChoiceParser();
 
-  Parser abbreviation() => [abbrevPrefix(), ref0(datum)].toSequenceParser();
+  Parser abbreviation() => seq2(abbrevPrefix(), ref0(datum));
 
   Parser abbrevPrefix() =>
       [quote(), backtick(), comma(), commaAt()].toChoiceParser();
 
-  Parser vector() =>
-      [hashParen(), ref0(datum).star(), rParen()].toSequenceParser();
+  Parser vector() => seq3(hashParen(), ref0(datum).star(), rParen());
 
   // 7.1.1 Lexical Structure
 
@@ -366,17 +292,17 @@ class SchemeGrammar extends GrammarDefinition {
   Parser<String> commaAt() => string(",@");
   Parser<String> dot() => char(".");
 
-  Parser<String> comment() => [
+  Parser<String> comment() => seq3(
     char(";"),
     ref0(newline).neg().star(),
     ref0(newline).optional(),
-  ].toSequenceParser().flatten();
+  ).flatten();
 
   // atmosphere   ???
   // intertokenSpace  ???
 
   Parser identifier() => [
-    [initial(), subsequent().star()].toSequenceParser(),
+    seq2(initial(), subsequent().star()),
     peculiarIdentifier(),
   ].toChoiceParser();
 
@@ -425,36 +351,39 @@ class SchemeGrammar extends GrammarDefinition {
 
   Parser variable() => ref0(keyword).not().seq(identifier());
 
-  Parser<SBoolean> boolean() => [
-    string("#t").token().map((t) => SBoolean(true, t)),
-    string("#f").token().map((t) => SBoolean(false, t)),
-  ].toChoiceParser();
-
-  Parser<SChar> character() =>
+  Parser<SBoolean> boolean() =>
       [
-        string("#\\"),
-        [string("space"), string("newline"), ref0(any)].toChoiceParser(),
-      ].toSequenceParser().flatten().token().map((t) {
-        if (t.value.endsWith("space")) {
-          return SChar(" ", t);
-        } else if (t.value.endsWith("newline")) {
-          return SChar("\n", t);
-        } else {
-          return SChar(String.fromCharCode(t.value.runes.last), t);
-        }
-      });
+        string("#t").token().map((t) => SBoolean(true, t)),
+        string("#f").token().map((t) => SBoolean(false, t)),
+      ].toChoiceParser(
+        failureJoiner: (f1, f2) {
+          assert(
+            f1.position == f2.position,
+            "the positions should be the same",
+          );
+          return Failure(f1.buffer, f1.position, err.boolean);
+        },
+      );
 
-  // In spec, is characterName
-  Parser sString() => [char('"'), ref0(stringElement).star(), char('"')]
-      .toSequenceParser()
-      .flatten()
-      .token()
-      .map((t) => SString(t.value.substring(1, t.value.length - 1), t));
+  Parser<SChar> character() => seq2(
+    string("#\\"),
+    [
+      string("space").map((s) => " "),
+      string("newline").map((s) => "\n"),
+      any(unicode: true),
+    ].toChoiceParser(),
+  ).map2((_, s) => s).token().map((t) => SChar(t.value, t));
+
+  Parser<SString> sString() => seq3(
+    char('"'),
+    ref0(stringElement).star(),
+    char('"'),
+  ).map3((_, chs, _) => chs.join("")).token().map((t) => SString(t.value, t));
 
   Parser<String> stringElement() => [
     string('\\"').map((s) => '"'),
-    string("\\\\").map((s) => "\\"),
-    pattern('^"\\'),
+    string('\\\\').map((s) => "\\"),
+    pattern('^\\"', unicode: true),
   ].toChoiceParser();
 
   Parser sElse() => string("else");
@@ -493,78 +422,83 @@ class SchemeGrammar extends GrammarDefinition {
     ref1(sNum, 16),
   ].toChoiceParser();
 
-  Parser sNum(int r) => [ref1(prefix, r), ref1(complex, r)].toSequenceParser();
+  Parser sNum(int r) => seq2(ref1(prefix, r), ref1(complex, r));
+
+  Parser plusOrMinus() => pattern("+-");
 
   Parser complex(int r) => [
-    [ref1(real, r), char("a"), ref1(real, r)].toSequenceParser(),
-    [
+    seq3(ref1(real, r), char("@"), ref1(real, r)),
+    seq4(
       ref1(real, r),
-      [char("+"), char("-")].toChoiceParser(),
+      plusOrMinus(),
       ref(ureal, r),
       char("i", ignoreCase: true),
-    ].toSequenceParser(),
-    [
-      ref1(real, r),
-      [char("+"), char("-")].toChoiceParser(),
-      char("i", ignoreCase: true),
-    ].toSequenceParser(),
-    [
-      [char("+"), char("-")].toChoiceParser(),
-      ref1(ureal, r),
-    ].toSequenceParser(),
-    [
-      [char("+"), char("-")].toChoiceParser(),
-      char("i", ignoreCase: true),
-    ].toSequenceParser(),
+    ),
+    seq3(ref1(real, r), plusOrMinus(), char("i", ignoreCase: true)),
+    seq2(plusOrMinus(), ref1(ureal, r)),
+    seq2(plusOrMinus(), char("i", ignoreCase: true)),
     ref1(real, r),
-  ].toSequenceParser();
+  ].toChoiceParser();
 
-  Parser real(int r) =>
-      [ref0(sign).optional(), ref1(ureal, r)].toSequenceParser();
+  Parser real(int r) => seq2(ref0(sign).optional(), ref1(ureal, r));
 
   Parser ureal(int r) => [
     ref(pointed, r),
-    [ref1(uinteger, r), char("/"), ref1(uinteger, r)].toSequenceParser(),
+    seq3(ref1(uinteger, r), char("/"), ref1(uinteger, r)),
     ref1(uinteger, r),
   ].toChoiceParser();
 
   Parser pointed(int r) => [
-    [ref1(uinteger, r), ref1(suffix, r)].toSequenceParser(),
-    [
+    seq2(ref1(uinteger, r), ref1(suffix, r)),
+    seq4(
       char("."),
       ref1(digit, r).plus(),
       char("#").star(),
       ref1(suffix, r).optional(),
-    ].toSequenceParser(),
-    [
+    ),
+    seq5(
       ref1(digit, r).plus(),
       char("."),
       ref1(digit, r).star(),
       char("#").star(),
       ref1(suffix, r).optional(),
-    ].toSequenceParser(),
-    [
+    ),
+    seq5(
       ref1(digit, r).plus(),
       char("#").plus(),
       char("."),
       char("#"),
       ref1(suffix, r).optional(),
-    ].toSequenceParser(),
+    ),
   ].toChoiceParser();
 
-  Parser uinteger(int r) =>
-      [ref1(digit, r), char("#").star()].toSequenceParser();
+  Parser<SNumber> uinteger(int r) => seq2(ref1(digit, r), char("#").star())
+      .map2(
+        (digits, hashes) => // int and whether it's exact
+        (
+          BigInt.parse(digits + "0" * hashes.length, radix: r),
+          hashes.isEmpty,
+        ),
+      )
+      .token()
+      .map((Token<(BigInt, bool)> t) {
+        var (bi, isExact) = t.value;
+        Token<String> stringToken = t.toStringToken;
+        return isExact
+            ? SNumber(SInt(bi), stringToken)
+            : SNumber(SDouble(bi.toDouble()), stringToken);
+      });
 
   Parser prefix(int r) => [
-    [ref1(radix, r), ref0(exactness).optional()].toSequenceParser(),
-    [ref0(exactness).optional(), ref1(radix, r)].toSequenceParser(),
+    seq2(ref1(radix, r), ref0(exactness).optional()),
+    seq2(ref0(exactness).optional(), ref1(radix, r)),
   ].toChoiceParser();
 
-  Parser suffix(int r) => [
+  Parser suffix(int r) => seq3(
     ref1(exponentMarker, r),
     ref0(sign).optional(),
     ref1(digit, r).plus(),
-  ].toSequenceParser();
+  );
 
   Parser exponentMarker(int r) {
     if (r == 16) {
@@ -576,19 +510,22 @@ class SchemeGrammar extends GrammarDefinition {
 
   Parser sign() => anyOf("+-");
 
-  Parser exactness() =>
-      [char("#"), anyOf("ei", ignoreCase: true)].toSequenceParser();
+  Parser<Exactness> exactness() => seq2(
+    char("#"),
+    char("e", ignoreCase: true).mapTo(Exactness.exact) |
+        char("i", ignoreCase: true).mapTo(Exactness.inexact),
+  ).map2((_, ex) => ex);
 
   // TODO: clean up the cases
   Parser radix(int r) {
     if (r == 2) {
-      return [char("#"), char("b", ignoreCase: true)].toSequenceParser();
+      return seq2(char("#"), char("b", ignoreCase: true));
     } else if (r == 8) {
-      return [char("#"), char("o", ignoreCase: true)].toSequenceParser();
+      return seq2(char("#"), char("o", ignoreCase: true));
     } else if (r == 10) {
-      return [char("#"), char("d", ignoreCase: true)].toSequenceParser();
+      return seq2(char("#"), char("d", ignoreCase: true));
     } else if (r == 16) {
-      return [char("#"), char("x", ignoreCase: true)].toSequenceParser();
+      return seq2(char("#"), char("x", ignoreCase: true));
     } else {
       throw ArgumentError(
         "only a radix of 2, 8, 10, or 16 is allowed, given $r",
@@ -609,4 +546,9 @@ class SchemeGrammar extends GrammarDefinition {
       throw ArgumentError("only a radix of 2, 8, 10, or 16 is allowed");
     }
   }
+}
+
+extension ToStringToken<T> on Token<T> {
+  Token<String> get toStringToken =>
+      Token(buffer.substring(start, stop), buffer, start, stop);
 }
