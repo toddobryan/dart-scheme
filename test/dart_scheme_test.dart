@@ -3,7 +3,6 @@ import 'package:checks/context.dart';
 import 'package:dart_scheme/dart_scheme/ast.dart';
 import 'package:dart_scheme/dart_scheme/error_messages.dart' as e;
 import 'package:dart_scheme/dart_scheme/parser.dart';
-import 'package:petitparser/debug.dart';
 import 'package:petitparser/petitparser.dart';
 import 'package:petitparser/reflection.dart';
 import 'package:test/test.dart';
@@ -73,6 +72,10 @@ void main() {
       check(unicode).successValue.value.equals("⁭╳⌦⒲∛≥⥂⧹⅂⊇⇐⦨⑟⎫⭰⯊⾕⳰✪↢❯♁⮶⪎");
       Result<SString> surrPairs = p.parse('"🍗🍋🍦🍥🍅🌭🍤🍫🍎🍱"');
       check(surrPairs).successValue.value.equals("🍗🍋🍦🍥🍅🌭🍤🍫🍎🍱");
+    });
+
+    test("numbers", () {
+      Parser<SNumber> p = g.buildFrom(g.number());
     });
   });
 }

@@ -415,14 +415,14 @@ class SchemeGrammar extends GrammarDefinition {
 
   // Numbers
 
-  Parser number() => [
+  Parser<SNumber> number() => [
     ref1(sNum, 2),
     ref1(sNum, 8),
     ref1(sNum, 10),
     ref1(sNum, 16),
   ].toChoiceParser();
 
-  Parser sNum(int r) => seq2(ref1(prefix, r), ref1(complex, r));
+  Parser<SNumeric> sNum(int r) => seq2(ref1(prefix, r), ref1(complex, r));
 
   Parser plusOrMinus() => pattern("+-");
 
@@ -489,9 +489,9 @@ class SchemeGrammar extends GrammarDefinition {
             : SNumber(SDouble(bi.toDouble()), stringToken);
       });
 
-  Parser prefix(int r) => [
-    seq2(ref1(radix, r), ref0(exactness).optional()),
-    seq2(ref0(exactness).optional(), ref1(radix, r)),
+  Parser<(int, Exactness)> prefix(int r) => [
+    seq2(ref1(radix, r), ref0(exactness).optionalWith(Exactness.exact)).map2((rad, isExact) => (rad, isExact)),
+    seq2(ref0(exactness).optionalWith(Exactness.exact), ref1(radix, r)).map2((isExact, rad) => (rad, isExact)),
   ].toChoiceParser();
 
   Parser suffix(int r) => seq3(
@@ -517,15 +517,17 @@ class SchemeGrammar extends GrammarDefinition {
   ).map2((_, ex) => ex);
 
   // TODO: clean up the cases
-  Parser radix(int r) {
+  Parser<int> radix(int r) {
     if (r == 2) {
-      return seq2(char("#"), char("b", ignoreCase: true));
+      return seq2(char("#"), char("b", ignoreCase: true)).map((_) => 2);
     } else if (r == 8) {
-      return seq2(char("#"), char("o", ignoreCase: true));
+      return seq2(char("#"), char("o", ignoreCase: true)).map((_) => 8);
     } else if (r == 10) {
-      return seq2(char("#"), char("d", ignoreCase: true));
+      return [seq2(char("#"), char("d", ignoreCase: true)), epsilon()]
+          .toChoiceParser()
+          .map((_) => 10);
     } else if (r == 16) {
-      return seq2(char("#"), char("x", ignoreCase: true));
+      return seq2(char("#"), char("x", ignoreCase: true)).map((_) => 16);
     } else {
       throw ArgumentError(
         "only a radix of 2, 8, 10, or 16 is allowed, given $r",
