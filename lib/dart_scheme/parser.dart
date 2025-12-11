@@ -9,6 +9,10 @@ extension MapToParser<T1, T2> on Parser<T1> {
 }
 
 class SchemeGrammar extends GrammarDefinition {
+  /* SETTINGS
+     allow non-base-10 values with points and exponents
+  */
+
   @override
   Parser start() => ref(program);
 
@@ -274,6 +278,7 @@ class SchemeGrammar extends GrammarDefinition {
     lParen(),
     rParen(),
     hashParen(),
+    hashU8Paren(),
     quote(),
     backtick(),
     comma(),
@@ -281,41 +286,144 @@ class SchemeGrammar extends GrammarDefinition {
     dot(),
   ].toChoiceParser();
 
-  Parser delimiter() =>
-      [whitespace(), lParen(), rParen(), char('"'), char(";")].toChoiceParser();
+  Parser delimiter() => [
+    sWhitespace(),
+    verticalLine(),
+    lParen(),
+    rParen(),
+    doubleQuote(),
+    semicolon(),
+  ].toChoiceParser();
+
+  Parser<String> intralineWhitespace() => pattern(" \t");
+  Parser<String> sWhitespace() =>
+      [intralineWhitespace(), lineEnding()].toChoiceParser();
+  Parser<String> lineEnding() =>
+      [char("\n"), string("\r\n"), char("\r")].toChoiceParser();
 
   Parser<String> lParen() => char("(");
   Parser<String> rParen() => char(")");
   Parser<String> hashParen() => string("#(");
+  Parser<String> hashU8Paren() => string("#u8(");
   Parser<String> backtick() => char("`");
   Parser<String> comma() => char(",");
   Parser<String> commaAt() => string(",@");
   Parser<String> dot() => char(".");
+  Parser<String> verticalLine() => char("|");
+  Parser<String> doubleQuote() => char('"');
+  Parser<String> semicolon() => char(";");
 
-  Parser<String> comment() => seq3(
-    char(";"),
-    ref0(newline).neg().star(),
-    ref0(newline).optional(),
+  Parser<String> comment() => [
+    seq2(char(";"), (lineEnding().not() & any()).star()).flatten(),
+    nestedComment(),
+    seq3(string("#;"), intertokenSpace(), ref0(datum)).flatten(),
+  ].toChoiceParser();
+
+  Parser<String> nestedComment() => seq4(
+    string("#|"),
+    commentText(),
+    ref0(commentCont).star(),
+    string("|#"),
   ).flatten();
+  Parser<String> commentText() => seq2(
+    [string("#|"), string("|#")].toChoiceParser().not(),
+    any(),
+  ).flatten();
+  Parser<String> commentCont() =>
+      seq2(ref0(nestedComment), commentText()).flatten();
+  Parser directive() => [
+    string("#!fold-case"),
+    string("#!no-fold-case"),
+  ].toChoiceParser().and().seq([delimiter(), eof()].toChoiceParser());
 
-  // atmosphere   ???
-  // intertokenSpace  ???
+  Parser atmosphere() =>
+      [sWhitespace(), comment(), directive()].toChoiceParser();
+  Parser intertokenSpace() => ref0(atmosphere).star();
+  Parser eof() => endOfInput();
 
   Parser identifier() => [
     seq2(initial(), subsequent().star()),
+    seq3(verticalLine(), ref0(symbolElement).star(), verticalLine()),
     peculiarIdentifier(),
   ].toChoiceParser();
 
   Parser initial() => [letter(), specialInitial()].toChoiceParser();
-
-  Parser specialInitial() => anyOf("!\$%&*/:<=>?^_~");
-
+  Parser specialInitial() => anyOf("!\$%&*/:<=>?@^_~");
   Parser subsequent() =>
       [initial(), digit(10), specialSubsequent()].toChoiceParser();
+  Parser digit() => pattern("0-9");
+  Parser hexDigit() =>
+      [digit(), pattern("a-f", ignoreCase: true)].toChoiceParser();
+  Parser explicitSign() => anyOf("+-");
+  Parser specialSubsequent() => [explicitSign(), anyOf(".@")].toChoiceParser();
+  Parser inlineHexEscape() => seq2(string("\\x"), hexScalarValue());
+  Parser hexScalarValue() => hexDigit().plus();
+  Parser mnemonicEscape() => [
+    string(r"\a"),
+    string(r"\b"),
+    string(r"\n"),
+    string(r"\r"),
+    string(r"\t"),
+  ].toChoiceParser();
+  Parser peculiarIdentifier() => seq2(
+    seq2(
+      [string("+i"), string("-i"), infnan()].toChoiceParser(),
+      [delimiter(), eof()].toChoiceParser(),
+    ).not(),
+    [
+      explicitSign(),
+      seq3(explicitSign(), signSubsequent(), subsequent().star()),
+      seq4(explicitSign(), dot(), dotSubsequent(), subsequent().star()),
+      seq3(dot(), dotSubsequent(), subsequent().star()),
+    ].toChoiceParser(),
+  );
+  Parser dotSubsequent() => [signSubsequent(), dot()].toChoiceParser();
+  Parser signSubsequent() =>
+      [initial(), explicitSign(), char("@")].toChoiceParser();
+  Parser symbolElement() => [
+    initial(),
+    mnemonicEscape(),
+    char("\\"),
+    pattern("^|\\"),
+  ].toChoiceParser();
 
-  Parser specialSubsequent() => anyOf("+-.@");
+  Parser<bool> boolean() => [
+    [string("#true"), string("#t")].toChoiceParser().mapTo(true),
+    [string("#false"), string("#f")].toChoiceParser().mapTo(false),
+  ].toChoiceParser() as Parser<bool>;
 
-  Parser peculiarIdentifier() => [anyOf("+-"), string("...")].toChoiceParser();
+  Parser character() => [
+    seq2(string("#\\"), characterName()),
+    seq2(string("#\\x"), hexScalarValue()),
+    seq2(string("#\\"), any()),
+  ].toChoiceParser();
+  Parser characterName() => [
+    string("alarm"),
+    string("backspace"),
+    string("delete"),
+    string("escape"),
+    string("newline"),
+    string("null"),
+    string("return"),
+    string("space"),
+    string("tab"),
+  ].toChoiceParser();
+
+  Parser sString() => seq3(doubleQuote(), stringElement().star(), doubleQuote());
+  Parser stringElement() => [
+    inlineHexEscape(),
+    seq4(char(r"\"), intralineWhitespace().star(), lineEnding(), intralineWhitespace().star()),
+    mnemonicEscape(),
+    string(r'\"'),
+    string(r"\\"),
+    string(r"\|"),
+    pattern(r'^"\'),
+  ].toChoiceParser();
+
+  Parser byteVector() => seq3(hashU8Paren(), sByte().star(), rParen());
+  Parser sByte() => fail("TODO") // integer value from 0-255
+
+
 
   Parser syntacticKeyword() => [
     expressionKeyword(),
@@ -365,14 +473,7 @@ class SchemeGrammar extends GrammarDefinition {
         },
       );
 
-  Parser<SChar> character() => seq2(
-    string("#\\"),
-    [
-      string("space").map((s) => " "),
-      string("newline").map((s) => "\n"),
-      any(unicode: true),
-    ].toChoiceParser(),
-  ).map2((_, s) => s).token().map((t) => SChar(t.value, t));
+
 
   Parser<SString> sString() => seq3(
     char('"'),
@@ -490,8 +591,14 @@ class SchemeGrammar extends GrammarDefinition {
       });
 
   Parser<(int, Exactness)> prefix(int r) => [
-    seq2(ref1(radix, r), ref0(exactness).optionalWith(Exactness.exact)).map2((rad, isExact) => (rad, isExact)),
-    seq2(ref0(exactness).optionalWith(Exactness.exact), ref1(radix, r)).map2((isExact, rad) => (rad, isExact)),
+    seq2(
+      ref1(radix, r),
+      ref0(exactness).optionalWith(Exactness.exact),
+    ).map2((rad, isExact) => (rad, isExact)),
+    seq2(
+      ref0(exactness).optionalWith(Exactness.exact),
+      ref1(radix, r),
+    ).map2((isExact, rad) => (rad, isExact)),
   ].toChoiceParser();
 
   Parser suffix(int r) => seq3(
@@ -523,9 +630,10 @@ class SchemeGrammar extends GrammarDefinition {
     } else if (r == 8) {
       return seq2(char("#"), char("o", ignoreCase: true)).map((_) => 8);
     } else if (r == 10) {
-      return [seq2(char("#"), char("d", ignoreCase: true)), epsilon()]
-          .toChoiceParser()
-          .map((_) => 10);
+      return [
+        seq2(char("#"), char("d", ignoreCase: true)),
+        epsilon(),
+      ].toChoiceParser().map((_) => 10);
     } else if (r == 16) {
       return seq2(char("#"), char("x", ignoreCase: true)).map((_) => 16);
     } else {
