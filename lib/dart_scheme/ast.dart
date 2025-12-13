@@ -3,49 +3,24 @@ import 'package:petitparser/petitparser.dart';
 
 enum Exactness { exact, inexact }
 
-class Pair {
-  dynamic cons;
-  dynamic cdr;
+abstract class SExpr<T> {
+  final T value;
+  final Token<String> token;
+  final SExprType type;
 
-  Pair(this.cons, this.cdr);
+  SExpr(this.value, this.token, this.type);
 }
 
-abstract class SAst<R> {
-  final R value;
-  Token<String> token;
-
-  SAst(this.value, this.token);
+class Atom<T> extends SExpr<T> {
+  Atom(super.value, super.token, super.type);
 }
 
-class SBoolean extends SAst<bool> {
-  SBoolean(super.value, super.token);
+class Pair<T1, T2> extends SExpr<(SExpr<T1>, SExpr<T2>)> {
+  Pair(SExpr<T1> car, SExpr<T2> cdr, Token<String> token)
+    : super((car, cdr), token, SExprType.pair);
+
+  T1 get car => value.$1.value;
+  T2 get cdr => value.$2.value;
 }
 
-class SPair extends SAst<Pair> {
-  SPair(super.value, super.token);
-}
-
-class SSymbol extends SAst<Symbol> {
-  SSymbol(super.value, super.token);
-}
-
-class SNumber extends SAst<SNumeric> {
-  SNumber(super.value, super.token);
-}
-
-// TODO: check that String is only one character
-class SChar extends SAst<String> {
-  SChar(super.value, super.token)
-    : assert(
-        value.runes.length == 1,
-        "chars are represented by strings exactly one character long",
-      );
-}
-
-class SString extends SAst<String> {
-  SString(super.value, super.token);
-}
-
-class SVector extends SAst<List<dynamic>> {
-  SVector(super.value, super.token);
-}
+enum SExprType { boolean, string, integer, rational, real, complex, char, pair }

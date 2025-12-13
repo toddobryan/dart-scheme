@@ -3,12 +3,18 @@ import 'package:checks/context.dart';
 import 'package:dart_scheme/dart_scheme/ast.dart';
 import 'package:dart_scheme/dart_scheme/error_messages.dart' as e;
 import 'package:dart_scheme/dart_scheme/parser.dart';
+import 'package:petitparser/debug.dart';
 import 'package:petitparser/petitparser.dart';
 import 'package:petitparser/reflection.dart';
 import 'package:test/test.dart';
 
 void main() {
   final g = SchemeGrammar();
+  
+  SuccessTestCase<T> stc<T>(String input, SExprType type, T value, int start, int stop) =>
+    SuccessTestCase(input, type, value, start, stop);
+  FailureTestCase ftc(String input, String message, int index) =>
+    FailureTestCase(input, message, index);
 
   test("linter", () {
     Parser p = g.build();
@@ -17,66 +23,88 @@ void main() {
 
   group("parsing primitives", () {
     test("booleans", () {
-      Parser<SBoolean> p = g.buildFrom(g.boolean());
+      Parser<SExpr<bool>> p = g.buildFrom(g.boolean());
+      
+      List<SuccessTestCase<bool>> good = [
+        stc("#t", SExprType.boolean, true, 0, 2),
+        stc("#true", SExprType.boolean, true, 0, 5),
+        stc("#f", SExprType.boolean, false, 0, 2),
+        stc("#false", SExprType.boolean, false, 0, 6),
+      ];
+      
+      for (SuccessTestCase<bool> tc in good) {
+        tc.parses(p);
+      }
+      
+      List<FailureTestCase> bad = [
+        ftc("", e.boolean, 0),
+        ftc("true", e.boolean, 0),
+        ftc("#T", e.boolean, 0),
+      ];
 
-      Result<SBoolean> t = p.parse("#t");
-      check(t).successValue.value.equals(true);
-      Result<SBoolean> f = p.parse("#f");
-      check(f).successValue.value.equals(false);
-
-      Result<SBoolean> empty = p.parse("");
-      check(empty)
-        ..failureMessage.equals(e.boolean)
-        ..position.equals(0);
-      Result<SBoolean> trueX = p.parse("true");
-      check(trueX)
-        ..failureMessage.equals(e.boolean)
-        ..position.equals(0);
-      Result<SBoolean> hash = p.parse("#T");
-      check(hash)
-        ..failureMessage.equals(e.boolean)
-        ..position.equals(0);
+      for (FailureTestCase tc in bad) {
+        tc.failsToParse(p);
+      }
     });
 
     test("characters", () {
-      Parser<SChar> p = g.buildFrom(g.character());
+      Parser<SExpr<String>> p = g.buildFrom(g.character());
 
-      Result<SChar> space = p.parse("#\\space");
-      check(space).successValue.value.equals(" ");
-      Result<SChar> newline = p.parse("#\\newline");
-      check(newline).successValue.value.equals("\n");
-      Result<SChar> backslash = p.parse("#\\\\");
-      check(backslash).successValue.value.equals("\\");
-      Result<SChar> simpleChar = p.parse("#\\A");
-      check(simpleChar).successValue.value.equals("A");
-      Result<SChar> unicode = p.parse("#\\\u0421");
-      check(unicode).successValue.value.equals("\u0421");
-      Result<SChar> surrogatePair = p.parse("#\\\ud83d\ude80");
-      check(surrogatePair).successValue.value.equals("\u{1f680}");
-      Result<SChar> surrogatePair2 = p.parse("#\\\u{1f680}");
-      check(surrogatePair2).successValue.value.equals("\ud83d\ude80");
-      Result<SChar> space2 = p.parse("#\\ ");
-      check(space2).successValue.value.equals(" ");
+      SExprType ch = SExprType.char;
+
+      List<(String, String)> examples = [
+        (r"#\space", " "),
+        (r"#\alarm", "\u0007"),
+        (r"#\backspace", "\u0008"),
+        (r"#\delete", "\u007f"),
+        (r"#\escape", "\u001b"),
+        (r"#\newline", "\u000a"),
+        (r"#\null", "\u0000"),
+        (r"#\return", "\u000d"),
+        (r"#\space", "\u0020"),
+        (r"#\tab", "\u0009"),
+        (r"#\A", "A"),
+        ("#\\\u0421", "\u0421"),
+        ("#\\\ud83d\uDE80", "\u{1f680}"),
+        ("#\\\u{1f680}", "\ud83d\uDE80"),
+        (r"#\ ", " "),
+        ("#\\\n", "\n"),
+      ];
+
+      List<SuccessTestCase<String>> good = examples.map((ia) =>
+        stc(ia.$1, SExprType.char, ia.$2, 0, ia.$1.length)
+      ).toList();
+
+      for (SuccessTestCase<String> tc in good) {
+        tc.parses(p);
+      }
     });
 
     test("strings", () {
       // NOTE: \n and \t (and all the others) are not in the spec
-      Parser<SString> p = g.buildFrom(g.sString());
-      Result<SString> empty = p.parse('""');
-      check(empty).successValue.value.equals("");
-      Result<SString> escapes = p.parse('"\\"\n\\\\"');
-      check(escapes).successValue.value.equals('"\n\\');
-      Result<SString> normal = p.parse('"abc123"');
-      check(normal).successValue.value.equals("abc123");
-      Result<SString> unicode = p.parse('"⁭╳⌦⒲∛≥⥂⧹⅂⊇⇐⦨⑟⎫⭰⯊⾕⳰✪↢❯♁⮶⪎"');
-      check(unicode).successValue.value.equals("⁭╳⌦⒲∛≥⥂⧹⅂⊇⇐⦨⑟⎫⭰⯊⾕⳰✪↢❯♁⮶⪎");
-      Result<SString> surrPairs = p.parse('"🍗🍋🍦🍥🍅🌭🍤🍫🍎🍱"');
-      check(surrPairs).successValue.value.equals("🍗🍋🍦🍥🍅🌭🍤🍫🍎🍱");
+      Parser<SExpr<String>> p = g.buildFrom(g.sString());
+
+      List<(String, String)> examples = [
+        ('""', ""),
+        ('"\\"\\n\\\\"', '"\n\\'),
+        (r'"abc\' + "\n" + r'123"', "abc123"),
+        ('"abc123"', "abc123"),
+        ('"⁭╳⌦⒲∛≥⥂⧹⅂⊇⇐⦨⑟⎫⭰⯊⾕⳰✪↢❯♁⮶⪎"', "⁭╳⌦⒲∛≥⥂⧹⅂⊇⇐⦨⑟⎫⭰⯊⾕⳰✪↢❯♁⮶⪎"),
+        ('"🍗🍋🍦🍥🍅🌭🍤🍫🍎🍱"', "🍗🍋🍦🍥🍅🌭🍤🍫🍎🍱"),
+      ];
+
+      List<SuccessTestCase<String>> good = examples.map((ia) =>
+        stc(ia.$1, SExprType.string, ia.$2, 0, ia.$1.length)
+      ).toList();
+
+      for (SuccessTestCase<String> tc in good) {
+        tc.parses(p);
+      }
     });
 
     test("numbers", () {
       Parser<SNumber> p = g.buildFrom(g.number());
-    });
+    });*/
   });
 }
 
@@ -113,7 +141,50 @@ extension ResultChecks<T> on Subject<Result<T>> {
   Subject<T> get successValue => isSuccess().has((s) => s.value, "value");
 }
 
-extension SAstChecks<T> on Subject<SAst<T>> {
+extension SExprChecks<T> on Subject<SExpr<T>> {
   Subject<T> get value => has((a) => a.value, "value");
+  Subject<SExprType> get type => has((a) => a.type, "type");
   Subject<Token<String>> get token => has((a) => a.token, "token");
+}
+
+extension TokenChecks<T> on Subject<Token<T>> {
+  Subject<T> get value => has((t) => t.value, "value");
+  Subject<int> get start => has((t) => t.start, "start");
+  Subject<int> get stop => has((t) => t.stop, "stop");
+}
+
+class SuccessTestCase<T> {
+  final String input;
+  final SExprType type;
+  final T value;
+  final int start;
+  final int stop;
+
+  SuccessTestCase(this.input, this.type, this.value, this.start, this.stop);
+
+  void parses(Parser<SExpr<T>> p) {
+    Result<SExpr<T>> result = p.parse(input);
+    check(result).successValue
+      ..value.equals(value)
+      ..type.equals(type);
+    check(result).successValue.token
+      ..value.equals(input)
+      ..start.equals(start)
+      ..stop.equals(stop);
+  }
+}
+
+class FailureTestCase {
+  final String input;
+  final String message;
+  final int index;
+
+  FailureTestCase(this.input, this.message, this.index);
+
+  void failsToParse(Parser<dynamic> p) {
+    Result<dynamic> result = p.parse(input);
+    check(result).isA<Failure>()
+      ..failureMessage.equals(message)
+      ..position.equals(index);
+  }
 }

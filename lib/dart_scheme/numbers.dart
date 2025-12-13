@@ -1,5 +1,15 @@
-abstract class SNumeric {
-  bool get isExact;
+abstract class SNumber {
+  int radix;
+  bool isExact:
+
+  SNumber(this.radix, this.isExact);
+}
+
+class SInt extends SNumber {
+  String asString;
+  BigInt asInt;
+
+  factory SInt.fromString(value)
 }
 
 class SComplex extends SNumeric {

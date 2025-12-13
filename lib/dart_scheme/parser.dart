@@ -2,48 +2,89 @@ import 'package:big_decimal/big_decimal.dart';
 import 'package:dart_scheme/dart_scheme/ast.dart';
 import 'package:dart_scheme/dart_scheme/error_messages.dart' as err;
 import 'package:dart_scheme/dart_scheme/numbers.dart';
+import 'package:path/path.dart';
 import 'package:petitparser/petitparser.dart';
 
-extension MapToParser<T1, T2> on Parser<T1> {
-  Parser<T2> mapTo(T2 value) => map((t) => value);
+extension MapToParser<T1> on Parser<T1> {
+  Parser<T2> mapTo<T2>(T2 t2) => map((t1) => t2);
 }
 
 class SchemeGrammar extends GrammarDefinition {
   /* SETTINGS
      allow non-base-10 values with points and exponents
+     whether values with points are exact or inexact by default
+     true/false, #t/#f, #true/#false
   */
+
+  Parser<T1> ps1<T1>(Parser<T1> p1) =>
+      seq3(lParen(), p1, rParen()).map3((_, t1, _) => t1);
+  Parser<(T1, T2)> ps2<T1, T2>(Parser<T1> p1, Parser<T2> p2) =>
+      seq4(lParen(), p1, p2, rParen()).map4((_, t1, t2, _) => (t1, t2));
+  Parser<(T1, T2, T3)> ps3<T1, T2, T3>(
+    Parser<T1> p1,
+    Parser<T2> p2,
+    Parser<T3> p3,
+  ) => seq5(
+    lParen(),
+    p1,
+    p2,
+    p3,
+    rParen(),
+  ).map5((_, t1, t2, t3, _) => (t1, t2, t3));
 
   @override
   Parser start() => ref(program);
 
   // 7.1.6 Programs and definitions
 
-  Parser program() => ref0(commandOrDefinition).star();
+  Parser program() =>
+      seq2(ref0(importDeclaration).plus(), ref0(commandOrDefinition).plus());
 
   Parser commandOrDefinition() => [
     ref(command),
     ref(definition),
-    ref(syntaxDefinition),
-    seq3(lParen(), begin(), ref0(commandOrDefinition).plus()),
+    seq4(lParen(), begin(), ref0(commandOrDefinition).plus(), rParen()),
   ].toChoiceParser();
 
   Parser definition() => [
-    seq5(lParen(), define(), variable(), ref0(expression).trim(), ref0(rParen)),
+    seq5(lParen(), define(), identifier(), ref0(expression), rParen()),
     seq8(
       lParen(),
       define(),
       lParen(),
-      variable(),
+      identifier(),
       ref0(defFormals),
       rParen(),
       ref0(body),
       rParen(),
     ),
+    ref0(syntaxDefinition),
+    seq7(
+      lParen(),
+      defineRecordType(),
+      identifier(),
+      constructor(),
+      identifier(),
+      ref0(fieldSpec).star(),
+      rParen(),
+    ),
     seq4(lParen(), begin(), ref0(definition).star(), rParen()),
   ].toChoiceParser();
 
-  Parser defFormals() =>
-      seq2(variable().star(), seq2(dot(), variable()).optional());
+  Parser defFormals() => [
+    seq3(identifier().star(), dot(), identifier()),
+    identifier().star(),
+  ].toChoiceParser();
+
+  Parser constructor() =>
+      seq4(lParen(), identifier(), fieldName().star(), rParen());
+  Parser fieldSpec() => [
+    seq5(lParen(), fieldName(), accessor(), mutator(), rParen()),
+    seq4(lParen(), fieldName(), accessor(), rParen()),
+  ].toChoiceParser();
+  Parser fieldName() => identifier();
+  Parser accessor() => identifier();
+  Parser mutator() => identifier();
 
   Parser syntaxDefinition() => seq5(
     lParen(),
@@ -53,32 +94,145 @@ class SchemeGrammar extends GrammarDefinition {
     rParen(),
   );
 
-  // 7.1.5 Transformers
-
-  Parser transformerSpec() => seq6(
+  // 7.1.7 Libraries
+  Parser library() => seq5(
     lParen(),
-    syntaxRules(),
-    lParen(),
-    identifier().star(),
-    ref0(syntaxRule).star(),
+    defineLibrary(),
+    ref0(libraryName),
+    ref0(libraryDeclaration).star(),
     rParen(),
   );
+  Parser libraryName() => seq3(lParen(), libraryNamePart().plus(), rParen());
+  Parser libraryNamePart() => [identifier(), uinteger(10)].toChoiceParser();
+  Parser libraryDeclaration() => [
+    seq4(lParen(), export(), exportSpec().star(), rParen()),
+    ref0(importDeclaration),
+    seq4(lParen(), begin(), ref0(commandOrDefinition).star(), rParen()),
+    includer(),
+    seq4(
+      lParen(),
+      string("include-library-declarations"),
+      sString().plus(),
+      rParen(),
+    ),
+    seq4(lParen(), condExpand(), ref0(condExpandClause).plus(), rParen()),
+    seq8(
+      lParen(),
+      condExpand(),
+      ref0(condExpandClause).plus(),
+      lParen(),
+      sElse(),
+      ref0(libraryDeclaration).star(),
+      rParen(),
+      rParen(),
+    ),
+  ].toChoiceParser();
+  Parser importDeclaration() =>
+      seq4(lParen(), import(), ref0(importSet).plus(), rParen());
+  Parser exportSpec() => [
+    identifier(),
+    ps3(string("rename"), identifier(), identifier()),
+  ].toChoiceParser();
+  Parser importSet() => [
+    libraryName(),
+    seq5(
+      lParen(),
+      string("only"),
+      ref0(importSet),
+      identifier().plus(),
+      rParen(),
+    ),
+    seq5(
+      lParen(),
+      string("except"),
+      ref0(importSet),
+      identifier().plus(),
+      rParen(),
+    ),
+    seq5(lParen(), string("prefix"), ref0(importSet), identifier(), rParen()),
+    seq5(
+      lParen(),
+      string("rename"),
+      ref0(importSet),
+      seq4(lParen(), identifier(), identifier(), rParen()).plus(),
+      rParen(),
+    ),
+  ].toChoiceParser();
+  Parser condExpandClause() => seq4(
+    lParen(),
+    ref0(featureRequirement),
+    ref0(libraryDeclaration),
+    rParen(),
+  );
+  Parser featureRequirement() => [
+    identifier(),
+    ps2(string("library"), ref0(libraryName)),
+    ps2(string("and"), ref0(featureRequirement).star()),
+    ps2(string("or"), ref0(featureRequirement).star()),
+    ps2(string("not"), ref0(featureRequirement)),
+  ].toChoiceParser();
+
+  // 7.1.5 Transformers
+
+  Parser transformerSpec() => [
+    seq6(
+      lParen(),
+      syntaxRules(),
+      lParen(),
+      identifier().star(),
+      ref0(syntaxRule).star(),
+      rParen(),
+    ),
+    seq8(
+      lParen(),
+      syntaxRules(),
+      identifier(),
+      lParen(),
+      identifier().star(),
+      rParen(),
+      ref0(syntaxRule).star(),
+      rParen(),
+    ),
+  ].toChoiceParser();
 
   Parser syntaxRule() =>
       seq4(lParen(), ref0(sPattern), ref0(template), rParen());
 
   Parser sPattern() => [
     patternIdentifier(),
+    underscore(),
     seq3(lParen(), ref0(sPattern).star(), rParen()),
     seq5(lParen(), ref0(sPattern).plus(), dot(), ref0(sPattern), rParen()),
-    seq4(lParen(), ref0(sPattern).plus(), ellipsis(), rParen()),
+    seq6(
+      lParen(),
+      ref0(sPattern).star(),
+      ref0(sPattern),
+      ellipsis(),
+      ref0(sPattern).star(),
+      rParen(),
+    ),
+    seq8(
+      lParen(),
+      ref0(sPattern).star(),
+      ref0(sPattern),
+      ellipsis(),
+      ref0(sPattern).star(),
+      dot(),
+      ref0(sPattern),
+      rParen(),
+    ),
     seq3(hashParen(), ref0(sPattern).star(), rParen()),
     seq4(hashParen(), ref0(sPattern).plus(), ellipsis(), rParen()),
     ref0(patternDatum),
   ].toChoiceParser();
 
-  Parser patternDatum() =>
-      [sString(), character(), boolean(), number()].toChoiceParser();
+  Parser patternDatum() => [
+    sString(),
+    character(),
+    boolean(),
+    number(),
+    byteVector(),
+  ].toChoiceParser();
 
   Parser template() => [
     patternIdentifier(),
@@ -99,7 +253,9 @@ class SchemeGrammar extends GrammarDefinition {
 
   Parser templateDatum() => ref0(patternDatum);
 
-  Parser patternIdentifier() => ellipsis().not().seq(identifier());
+  Parser patternIdentifier() => seq2(ellipsis().not(), identifier());
+
+  Parser underscore() => char("_");
 
   // 7.1.4 Quasiquotations
 
@@ -166,14 +322,14 @@ class SchemeGrammar extends GrammarDefinition {
     ref0(includer),
   ].toChoiceParser();
 
-  Parser literal() => [ref0(quotation), ref0(selfEvaluating)].toChoiceParser();
+  Parser literal() => [ref0(quotation), selfEvaluating()].toChoiceParser();
 
   Parser selfEvaluating() => [
-    ref0(boolean),
-    ref0(number),
-    ref0(character),
-    ref0(sString),
-    ref0(byteVector),
+    boolean(),
+    number(),
+    character(),
+    sString(),
+    byteVector(),
   ].toChoiceParser();
 
   Parser quotation() => [
@@ -182,14 +338,14 @@ class SchemeGrammar extends GrammarDefinition {
   ].toChoiceParser();
 
   Parser procedureCall() =>
-      seq4(lParen(), ref0(operator), ref0(operand).star(), ref0(rParen));
+      seq4(lParen(), ref0(operator), ref0(operand).star(), rParen());
 
   Parser operator() => ref0(expression);
 
   Parser operand() => ref0(expression);
 
   Parser lambdaExpression() =>
-      seq5(lParen(), ref0(lambda), ref0(formals), ref0(body), ref0(rParen));
+      seq5(lParen(), lambda(), formals(), ref0(body), ref0(rParen));
 
   Parser formals() => [
     seq3(lParen(), identifier().star(), ref0(rParen)),
@@ -203,8 +359,14 @@ class SchemeGrammar extends GrammarDefinition {
 
   Parser command() => ref0(expression);
 
-  Parser conditional() =>
-      seq6(lParen(), string("if"), ref0(test), ref0(consequent), ref0(alternate), rParen());
+  Parser conditional() => seq6(
+    lParen(),
+    string("if"),
+    ref0(test),
+    ref0(consequent),
+    ref0(alternate),
+    rParen(),
+  );
 
   Parser test() => ref0(expression);
 
@@ -269,12 +431,12 @@ class SchemeGrammar extends GrammarDefinition {
 
   Parser symbol() => identifier();
 
-  Parser compoundDatum() => [ref0(list), ref0(vector), ref0(abbreviation)].toChoiceParser();
+  Parser compoundDatum() =>
+      [ref0(list), ref0(vector), ref0(abbreviation)].toChoiceParser();
 
   Parser list() => [
     seq3(lParen(), ref0(datum).star(), rParen()),
     seq5(lParen(), ref0(datum).plus(), dot(), ref0(datum), rParen()),
-    ref0(abbreviation),
   ].toChoiceParser();
 
   Parser abbreviation() => seq2(abbrevPrefix(), ref0(datum));
@@ -374,15 +536,23 @@ class SchemeGrammar extends GrammarDefinition {
       [digit10(), pattern("a-f", ignoreCase: true)].toChoiceParser();
   Parser explicitSign() => anyOf("+-");
   Parser specialSubsequent() => [explicitSign(), anyOf(".@")].toChoiceParser();
-  Parser inlineHexEscape() => seq2(string("\\x"), hexScalarValue());
-  Parser hexScalarValue() => hexDigit().plus();
-  Parser mnemonicEscape() => [
-    string(r"\a"),
-    string(r"\b"),
-    string(r"\n"),
-    string(r"\r"),
-    string(r"\t"),
-  ].toChoiceParser();
+
+  Parser<String> inlineHexEscape() => seq3(
+    string("\\x"),
+    hexScalarValue(),
+    char(";"),
+  ).map3((_, h, _) => String.fromCharCode(int.parse(h, radix: 16)));
+
+  Parser<String> hexScalarValue() => hexDigit().plus().flatten();
+  Parser<String> mnemonicEscape() =>
+      [
+            string(r"\a").mapTo("\u0007"),
+            string(r"\b").mapTo("\u0008"),
+            string(r"\n").mapTo("\u000a"),
+            string(r"\r").mapTo("\u000d"),
+            string(r"\t").mapTo("\u0009"),
+          ].toChoiceParser()
+          as Parser<String>;
   Parser peculiarIdentifier() => seq2(
     seq2(
       [string("+i"), string("-i"), infnan()].toChoiceParser(),
@@ -405,44 +575,74 @@ class SchemeGrammar extends GrammarDefinition {
     pattern("^|\\"),
   ].toChoiceParser();
 
-  Parser<bool> boolean() =>
+  Parser<SExpr<bool>> boolean() =>
       [
-            [string("#true"), string("#t")].toChoiceParser().mapTo(true),
-            [string("#false"), string("#f")].toChoiceParser().mapTo(false),
-          ].toChoiceParser()
-          as Parser<bool>;
+        [
+          string("#true"),
+          string("#t"),
+        ].toChoiceParser().token().map((t) => Atom(true, t, SExprType.boolean)),
+        [string("#false"), string("#f")].toChoiceParser().token().map(
+          (t) => Atom(false, t, SExprType.boolean),
+        ),
+      ].toChoiceParser(
+        failureJoiner: (f1, _) => Failure(f1.buffer, f1.position, err.boolean),
+      );
 
-  Parser character() => [
-    seq2(string("#\\"), characterName()),
-    seq2(string("#\\x"), hexScalarValue()),
-    seq2(string("#\\"), any()),
-  ].toChoiceParser();
-  Parser characterName() => [
-    string("alarm"),
-    string("backspace"),
-    string("delete"),
-    string("escape"),
-    string("newline"),
-    string("null"),
-    string("return"),
-    string("space"),
-    string("tab"),
+  Parser<SExpr<String>> character() => [
+    seq2(string("#\\"), characterName())
+        .map2((_, c) => c)
+        .token()
+        .map((t) => Atom(t.value, t.toStringToken, SExprType.char)),
+    seq3(string("#\\x"), hexScalarValue(), char(";"))
+        .map3((_, h, _) => int.parse(h, radix: 16))
+        .token()
+        .map(
+          (t) => Atom(
+            String.fromCharCode(t.value),
+            t.toStringToken,
+            SExprType.char,
+          ),
+        ),
+    seq2(string("#\\"), any(unicode: true))
+        .map2((_, c) => c)
+        .token()
+        .map((t) => Atom(t.value, t.toStringToken, SExprType.char)),
   ].toChoiceParser();
 
-  Parser sString() =>
-      seq3(doubleQuote(), stringElement().star(), doubleQuote());
-  Parser stringElement() => [
+  Parser<String> characterName() => [
+    string("alarm").mapTo("\u0007"),
+    string("backspace").mapTo("\u0008"),
+    string("delete").mapTo("\u007f"),
+    string("escape").mapTo("\u001b"),
+    string("newline").mapTo("\u000a"),
+    string("null").mapTo("\u0000"),
+    string("return").mapTo("\u000d"),
+    string("space").mapTo("\u0020"),
+    string("tab").mapTo("\u0009"),
+  ].toChoiceParser();
+
+  Parser<SExpr<String>> sString() =>
+      seq3(
+            doubleQuote(),
+            stringElement().star().map((ss) => ss.join("")),
+            doubleQuote(),
+          )
+          .map3((_, s, _) => s)
+          .token()
+          .map((t) => Atom(t.value, t.toStringToken, SExprType.string));
+
+  Parser<String> stringElement() => [
     inlineHexEscape(),
     seq4(
       char(r"\"),
       intralineWhitespace().star(),
       lineEnding(),
       intralineWhitespace().star(),
-    ),
+    ).mapTo(""),
     mnemonicEscape(),
-    string(r'\"'),
-    string(r"\\"),
-    string(r"\|"),
+    string(r'\"').mapTo('"'),
+    string(r"\\").mapTo(r"\"),
+    string(r"\|").mapTo("|"),
     pattern(r'^"\'),
   ].toChoiceParser();
 
@@ -574,6 +774,8 @@ class SchemeGrammar extends GrammarDefinition {
   Parser unquote() => string("unquote");
   Parser unquoteSplicing() => string("unquote-splicing");
   Parser defineSyntax() => string("define-syntax");
+  Parser defineLibrary() => string("define-library");
+  Parser defineRecordType() => string("define-record-type");
   Parser syntaxRules() => string("syntax-rules");
   Parser ellipsis() => string("...");
 
@@ -582,7 +784,10 @@ class SchemeGrammar extends GrammarDefinition {
   Parser sIf() => string("if");
   Parser<String> setBang() => string("set!");
   Parser<String> begin() => string("begin");
+  Parser import() => string("import");
+  Parser export() => string("export");
   Parser cond() => string("cond");
+  Parser condExpand() => string("cond-expand");
   Parser and() => string("and");
   Parser or() => string("or");
   Parser sCase() => string("case");
