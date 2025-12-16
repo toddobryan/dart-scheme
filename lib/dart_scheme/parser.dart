@@ -653,9 +653,12 @@ class SchemeGrammar extends GrammarDefinition {
   Parser byteVector() => seq3(hashU8Paren(), sByte().star(), rParen());
   Parser sByte() => failure(message: "TODO"); // integer value from 0-255
 
-  Parser<SNumber> number() => [sNum(2), sNum(8), sNum(10), sNum(16)].toChoiceParser();
+  Parser<SNumber> number() =>
+      [sNum(2), sNum(8), sNum(10), sNum(16)].toChoiceParser();
 
-  Parser<SNumber> sNum(int r) => seq2(prefix(r), complex(r)).map2((_, num) => num);
+  Parser<SNumber> sNum(int r) =>
+      seq2(prefix(r), complex(r)).map2((_, number) => number);
+
   Parser complex(int r) => [
     real(r),
     seq3(real(r), char("@"), real(r)),
@@ -670,27 +673,41 @@ class SchemeGrammar extends GrammarDefinition {
     string("+i", ignoreCase: true),
     string("-i", ignoreCase: true),
   ].toChoiceParser();
-  Parser real(int r) => [seq2(sign(), ureal(r)), infnan()].toChoiceParser();
-  Parser ureal(int r) => [
+
+  Parser<> real(int r) => [seq2(sign(), ureal(r)), infnan()].toChoiceParser();
+
+  Parser<NumString> ureal(int r) => [
     uinteger(r),
-    seq3(uinteger(r), char("/"), uinteger(r)),
+    seq3(uinteger(r), char("/"), uinteger(r)).map3((n, _, d) => FracString(n.digits, d.digits, r)),
     decimal(r),
   ].toChoiceParser();
-  Parser decimal(int r) {
+
+  Parser<Pointed> decimal(int r) {
     if (r != 10) {
       return failure(message: "decimal only defined for radix 10");
     } else {
       return [
-        seq2(uinteger(10), suffix()),
-        seq3(dot(), digit10().plus(), suffix()),
-        seq4(digit10().plus(), dot(), digit10().star(), suffix()),
+        seq2(
+          uinteger(10),
+          suffix(),
+        ).map2((bi, expt) => Pointed(bi.toString(), "", expt)),
+        seq3(
+          dot(),
+          digit10().plus().flatten(),
+          suffix(),
+        ).map3((_, aft, expt) => Pointed("", aft, expt)),
+        seq4(
+          digit10().plus().flatten(),
+          dot(),
+          digit10().star().flatten(),
+          suffix(),
+        ).map4((bef, _, aft, expt) => Pointed(bef, aft, expt)),
       ].toChoiceParser();
     }
   }
 
-  Parser<BigInt> uinteger(int r) =>
-      digit(r).plus().flatten().map(
-              (s) => BigInt.parse(s, radix: r));
+  Parser<IntString> uinteger(int r) =>
+      digit(r).plus().flatten().map((s) => IntString(s, r));
 
   Parser<(int, Exactness)> prefix(int r) => [
     seq2(radix(r), exactness()).map2((r, e) => (r, e)),
@@ -704,15 +721,25 @@ class SchemeGrammar extends GrammarDefinition {
     string("-nan.0", ignoreCase: true).mapTo(double.nan),
   ].toChoiceParser();
 
-  Parser<int> suffix() =>
-      seq3(exponentMarker(), sign(), digit10().plus().flatten()).map3((_, s, ds) => s * int.parse(ds)).optional().map((i) => i ?? 0);
+  // returns the value of the exponent, positive or negative
+  Parser<int> suffix() => seq3(
+    exponentMarker(),
+    sign(), // returns 1 or -1
+    digit10().plus().flatten(),
+  ).map3((_, s, ds) => s * int.parse(ds)).optional().map((i) => i ?? 0);
+
   Parser exponentMarker() => char("e", ignoreCase: true);
-  Parser sign() => pattern("+-").optional();
+
+  // returns 1 or -1
+  Parser<int> sign() =>
+      pattern("+-").optional().flatten().map((s) => s == "-" ? -1 : 1);
+
   Parser<Exactness> exactness() =>
-      seq2(char("#"), pattern("ie", ignoreCase: true)).optional()
-          .flatten()
-          .map((s) =>
-      s.toLowerCase().endsWith("i") ? Exactness.inexact : Exactness.exact);
+      seq2(char("#"), pattern("ie", ignoreCase: true)).optional().flatten().map(
+        (s) =>
+            s.toLowerCase().endsWith("i") ? Exactness.inexact : Exactness.exact,
+      );
+
   Parser<int> radix(int r) {
     if (r == 2) {
       return string("#b", ignoreCase: true).mapTo(2);
@@ -815,4 +842,44 @@ class SchemeGrammar extends GrammarDefinition {
 extension ToStringToken<T> on Token<T> {
   Token<String> get toStringToken =>
       Token(buffer.substring(start, stop), buffer, start, stop);
+}
+
+abstract class NumString {
+  NumString negate();
+}
+
+// A number of the form <beforeDot>.<afterDot>E<exponent>
+class Pointed extends NumString {
+  final String beforeDot;
+  final String afterDot;
+  final int exponent;
+
+  Pointed(this.beforeDot, this.afterDot, this.exponent);
+
+  Pointed negate() {
+    return Pointed("-$beforeDot", afterDot, exponent);
+  }
+}
+
+class IntString extends NumString {
+  final String digits;
+  final int radix;
+
+  IntString(this.digits, this.radix);
+
+  IntString negate() {
+    return IntString("-$digits", radix);
+  }
+}
+
+class FracString extends NumString {
+  final String num;
+  final String denom;
+  final int radix;
+
+  FracString(this.num, this.denom, this.radix);
+
+  FracString negate() {
+    return FracString("-$num", denom, radix);
+  }
 }
