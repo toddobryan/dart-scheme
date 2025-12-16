@@ -1,53 +1,40 @@
 abstract class SNumber {
   int radix;
-  bool isExact:
 
-  SNumber(this.radix, this.isExact);
+  SNumber(this.radix);
 }
 
-class SInt extends SNumber {
-  String asString;
-  BigInt asInt;
-
-  factory SInt.fromString(value)
+abstract class SExact extends SNumber {
+  SExact(super.radix);
 }
 
-class SComplex extends SNumeric {
-  SReal real;
-  SReal imag;
-
-  SComplex(this.real, this.imag);
-
-  @override
-  bool get isExact => real.isExact && imag.isExact;
+abstract class SInexact extends SNumber {
+  SInexact(super.radix);
 }
 
-abstract class SReal extends SNumeric {}
+class SExactReal extends SExact {
+  BigInt num;
+  BigInt denom;
 
-class SRational extends SReal {
-  SInt num;
-  SInt denom;
-
-  SRational(this.num, this.denom);
-
-  @override
-  bool get isExact => true;
+  SExactReal(super.radix, this.num, this.denom);
 }
 
-class SDouble extends SReal {
+class SInexactReal extends SInexact {
   double value;
 
-  SDouble(this.value);
-
-  @override
-  bool get isExact => false;
+  SInexactReal(super.radix, this.value);
 }
 
-class SInt extends SNumeric {
-  BigInt value;
+class SExactComplex extends SExact {
+  SExactReal real;
+  SExactReal imag;
 
-  SInt(this.value);
+  SExactComplex(super.radix, this.real, this.imag);
+}
 
-  @override
-  bool get isExact => true;
+class SInexactComplex extends SInexact {
+  SInexactReal real;
+  SInexactReal imag;
+
+  SInexactComplex(super.radix, this.real, this.imag);
 }

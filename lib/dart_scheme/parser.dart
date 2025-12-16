@@ -14,6 +14,10 @@ class SchemeGrammar extends GrammarDefinition {
      allow non-base-10 values with points and exponents
      whether values with points are exact or inexact by default
      true/false, #t/#f, #true/#false
+     allow improper cons
+     use null? or empty?
+     use '() or empty
+     keep numbers in radix or not
   */
 
   Parser<T1> ps1<T1>(Parser<T1> p1) =>
@@ -649,9 +653,9 @@ class SchemeGrammar extends GrammarDefinition {
   Parser byteVector() => seq3(hashU8Paren(), sByte().star(), rParen());
   Parser sByte() => failure(message: "TODO"); // integer value from 0-255
 
-  Parser number() => [sNum(2), sNum(8), sNum(10), sNum(16)].toChoiceParser();
+  Parser<SNumber> number() => [sNum(2), sNum(8), sNum(10), sNum(16)].toChoiceParser();
 
-  Parser sNum(int r) => seq2(prefix(r), complex(r));
+  Parser<SNumber> sNum(int r) => seq2(prefix(r), complex(r)).map2((_, num) => num);
   Parser complex(int r) => [
     real(r),
     seq3(real(r), char("@"), real(r)),
@@ -684,33 +688,40 @@ class SchemeGrammar extends GrammarDefinition {
     }
   }
 
-  Parser uinteger(int r) => digit(r).plus();
-  Parser prefix(int r) => [
-    seq2(radix(r), exactness()),
-    seq2(exactness(), radix(r)),
-  ].toChoiceParser();
-  Parser infnan() => [
-    string("+inf.0", ignoreCase: true),
-    string("-inf.0", ignoreCase: true),
-    string("+nan.0", ignoreCase: true),
-    string("-nan.0", ignoreCase: true),
+  Parser<BigInt> uinteger(int r) =>
+      digit(r).plus().flatten().map(
+              (s) => BigInt.parse(s, radix: r));
+
+  Parser<(int, Exactness)> prefix(int r) => [
+    seq2(radix(r), exactness()).map2((r, e) => (r, e)),
+    seq2(exactness(), radix(r)).map2((e, r) => (r, e)),
   ].toChoiceParser();
 
-  Parser suffix() =>
-      seq3(exponentMarker(), sign(), digit10().plus()).optional();
+  Parser<double> infnan() => [
+    string("+inf.0", ignoreCase: true).mapTo(double.infinity),
+    string("-inf.0", ignoreCase: true).mapTo(double.negativeInfinity),
+    string("+nan.0", ignoreCase: true).mapTo(double.nan),
+    string("-nan.0", ignoreCase: true).mapTo(double.nan),
+  ].toChoiceParser();
+
+  Parser<int> suffix() =>
+      seq3(exponentMarker(), sign(), digit10().plus().flatten()).map3((_, s, ds) => s * int.parse(ds)).optional().map((i) => i ?? 0);
   Parser exponentMarker() => char("e", ignoreCase: true);
   Parser sign() => pattern("+-").optional();
-  Parser exactness() =>
-      seq2(char("#"), pattern("ie", ignoreCase: true)).optional();
-  Parser radix(int r) {
+  Parser<Exactness> exactness() =>
+      seq2(char("#"), pattern("ie", ignoreCase: true)).optional()
+          .flatten()
+          .map((s) =>
+      s.toLowerCase().endsWith("i") ? Exactness.inexact : Exactness.exact);
+  Parser<int> radix(int r) {
     if (r == 2) {
-      return string("#b", ignoreCase: true);
+      return string("#b", ignoreCase: true).mapTo(2);
     } else if (r == 8) {
-      return string("#o", ignoreCase: true);
+      return string("#o", ignoreCase: true).mapTo(8);
     } else if (r == 16) {
-      return string("#x", ignoreCase: true);
+      return string("#x", ignoreCase: true).mapTo(16);
     } else if (r == 10) {
-      return string("#d", ignoreCase: true).optional();
+      return string("#d", ignoreCase: true).optional().mapTo(10);
     } else {
       throw ArgumentError(
         "only a radix of 2, 8, 10, or 16 is allowed, given $r",
