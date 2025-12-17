@@ -657,24 +657,27 @@ class SchemeGrammar extends GrammarDefinition {
       [sNum(2), sNum(8), sNum(10), sNum(16)].toChoiceParser();
 
   Parser<SNumber> sNum(int r) =>
-      seq2(prefix(r), complex(r)).map2((_, number) => number);
+      seq2(prefix(r), complex(r)).map2((exact, number) => SNumber.make(exact, number));
 
-  Parser complex(int r) => [
+  Parser<NumString> complex(int r) => [
     real(r),
-    seq3(real(r), char("@"), real(r)),
-    seq4(real(r), char("+"), ureal(r), char("i", ignoreCase: true)),
-    seq4(real(r), char("-"), ureal(r), char("i", ignoreCase: true)),
-    seq3(real(r), char("+"), char("i", ignoreCase: true)),
-    seq3(real(r), char("-"), char("i", ignoreCase: true)),
-    seq3(real(r), infnan(), char("i", ignoreCase: true)),
-    seq3(char("+"), ureal(r), char("i", ignoreCase: true)),
-    seq3(char("-"), ureal(r), char("i", ignoreCase: true)),
-    seq2(infnan(), char("i", ignoreCase: true)),
-    string("+i", ignoreCase: true),
-    string("-i", ignoreCase: true),
+    //seq3(real(r), char("@"), real(r)), TODO: polar coordinates
+    seq4(real(r), char("+"), ureal(r), char("i", ignoreCase: true)).map4((rl, _, im, _) => ComplexString(rl, im)),
+    seq4(real(r), char("-"), ureal(r), char("i", ignoreCase: true)).map4((rl, _, im, _) => ComplexString(rl, im.negate())),
+    seq3(real(r), char("+"), char("i", ignoreCase: true)).map3((rl, _, _) => ComplexString(rl, IntString("1", r))),
+    seq3(real(r), char("-"), char("i", ignoreCase: true)).map3((rl, _, _) => ComplexString(rl, IntString("-1", r))),
+    seq3(real(r), infnan(), char("i", ignoreCase: true)).map3((rl, inf, _) => ComplexString(rl, inf)),
+    seq3(char("+"), ureal(r), char("i", ignoreCase: true)).map3((_, rl, _) => ComplexString(IntString("0", r), rl)),
+    seq3(char("-"), ureal(r), char("i", ignoreCase: true)).map3((_, rl, _) => ComplexString(IntString("0", r), rl.negate())),
+    seq2(infnan(), char("i", ignoreCase: true)).map2((wn, _) => ComplexString(IntString("0", r), wn)),
+    string("+i", ignoreCase: true).mapTo(ComplexString(IntString("0", r), IntString("1", r))),
+    string("-i", ignoreCase: true).mapTo(ComplexString(IntString("0", r), IntString("-1", r))),
   ].toChoiceParser();
 
-  Parser<> real(int r) => [seq2(sign(), ureal(r)), infnan()].toChoiceParser();
+  Parser<NumString> real(int r) => [
+    seq2(sign(), ureal(r)).map2((s, u) => s < 0 ? u.negate() : u),
+    infnan(),
+  ].toChoiceParser();
 
   Parser<NumString> ureal(int r) => [
     uinteger(r),
@@ -682,7 +685,7 @@ class SchemeGrammar extends GrammarDefinition {
     decimal(r),
   ].toChoiceParser();
 
-  Parser<Pointed> decimal(int r) {
+  Parser<WithRadix> decimal(int r) {
     if (r != 10) {
       return failure(message: "decimal only defined for radix 10");
     } else {
@@ -690,18 +693,18 @@ class SchemeGrammar extends GrammarDefinition {
         seq2(
           uinteger(10),
           suffix(),
-        ).map2((bi, expt) => Pointed(bi.toString(), "", expt)),
+        ).map2((bi, expt) => WithRadix(bi.toString(), "", expt)),
         seq3(
           dot(),
           digit10().plus().flatten(),
           suffix(),
-        ).map3((_, aft, expt) => Pointed("", aft, expt)),
+        ).map3((_, aft, expt) => WithRadix("", aft, expt)),
         seq4(
           digit10().plus().flatten(),
           dot(),
           digit10().star().flatten(),
           suffix(),
-        ).map4((bef, _, aft, expt) => Pointed(bef, aft, expt)),
+        ).map4((bef, _, aft, expt) => WithRadix(bef, aft, expt)),
       ].toChoiceParser();
     }
   }
@@ -714,11 +717,11 @@ class SchemeGrammar extends GrammarDefinition {
     seq2(exactness(), radix(r)).map2((e, r) => (r, e)),
   ].toChoiceParser();
 
-  Parser<double> infnan() => [
-    string("+inf.0", ignoreCase: true).mapTo(double.infinity),
-    string("-inf.0", ignoreCase: true).mapTo(double.negativeInfinity),
-    string("+nan.0", ignoreCase: true).mapTo(double.nan),
-    string("-nan.0", ignoreCase: true).mapTo(double.nan),
+  Parser<WeirdNum> infnan() => [
+    string("+inf.0", ignoreCase: true).mapTo(WeirdNum(double.infinity)),
+    string("-inf.0", ignoreCase: true).mapTo(WeirdNum(double.negativeInfinity)),
+    string("+nan.0", ignoreCase: true).mapTo(WeirdNum(double.nan)),
+    string("-nan.0", ignoreCase: true).mapTo(WeirdNum(double.nan)),
   ].toChoiceParser();
 
   // returns the value of the exponent, positive or negative
@@ -849,15 +852,25 @@ abstract class NumString {
 }
 
 // A number of the form <beforeDot>.<afterDot>E<exponent>
-class Pointed extends NumString {
+class WithRadix extends NumString {
   final String beforeDot;
   final String afterDot;
   final int exponent;
 
-  Pointed(this.beforeDot, this.afterDot, this.exponent);
+  WithRadix(this.beforeDot, this.afterDot, this.exponent);
 
-  Pointed negate() {
-    return Pointed("-$beforeDot", afterDot, exponent);
+  WithRadix negate() {
+    return WithRadix("-$beforeDot", afterDot, exponent);
+  }
+}
+
+class WeirdNum extends NumString {
+  double value;
+
+  WeirdNum(this.value);
+
+  WeirdNum negate() {
+    throw UnimplementedError("shouldn't be able to negate Inf or NaN");
   }
 }
 
@@ -881,5 +894,16 @@ class FracString extends NumString {
 
   FracString negate() {
     return FracString("-$num", denom, radix);
+  }
+}
+
+class ComplexString extends NumString {
+  final NumString real;
+  final NumString imag;
+
+  ComplexString(this.real, this.imag);
+
+  ComplexString negate() {
+    throw UnimplementedError("shouldn't have to negate complex number");
   }
 }

@@ -1,7 +1,12 @@
+import 'package:dart_scheme/dart_scheme/ast.dart';
+
 abstract class SNumber {
   int radix;
 
   SNumber(this.radix);
+
+  factory SNumber.make(Exactness ex, NumString num) {
+  }
 }
 
 abstract class SExact extends SNumber {
