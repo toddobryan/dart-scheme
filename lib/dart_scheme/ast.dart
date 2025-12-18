@@ -23,4 +23,4 @@ class Pair<T1, T2> extends SExpr<(SExpr<T1>, SExpr<T2>)> {
   T2 get cdr => value.$2.value;
 }
 
-enum SExprType { boolean, string, integer, rational, real, complex, char, pair }
+enum SExprType { boolean, string, number, char, pair }

@@ -2,8 +2,8 @@ import 'package:checks/checks.dart';
 import 'package:checks/context.dart';
 import 'package:dart_scheme/dart_scheme/ast.dart';
 import 'package:dart_scheme/dart_scheme/error_messages.dart' as e;
+import 'package:dart_scheme/dart_scheme/numbers.dart';
 import 'package:dart_scheme/dart_scheme/parser.dart';
-import 'package:petitparser/debug.dart';
 import 'package:petitparser/petitparser.dart';
 import 'package:petitparser/reflection.dart';
 import 'package:test/test.dart';
@@ -50,8 +50,6 @@ void main() {
     test("characters", () {
       Parser<SExpr<String>> p = g.buildFrom(g.character());
 
-      SExprType ch = SExprType.char;
-
       List<(String, String)> examples = [
         (r"#\space", " "),
         (r"#\alarm", "\u0007"),
@@ -81,7 +79,6 @@ void main() {
     });
 
     test("strings", () {
-      // NOTE: \n and \t (and all the others) are not in the spec
       Parser<SExpr<String>> p = g.buildFrom(g.sString());
 
       List<(String, String)> examples = [
@@ -103,8 +100,25 @@ void main() {
     });
 
     test("numbers", () {
-      Parser<SNumber> p = g.buildFrom(g.number());
-    });*/
+      Parser<SExpr<SNumber>> p = g.buildFrom(g.number());
+
+      List<(String, SExprType, SNumber)> examples = [
+        ("0", SExprType.number, SExactInteger(10, BigInt.zero)),
+        ("#e0.0", SExprType.number, SExactInteger(10, BigInt.zero)),
+        ("123", SExprType.number, SExactInteger(10, BigInt.from(123))),
+        ("-21", SExprType.number, SExactInteger(10, BigInt.from(-21))),
+      ];
+
+      List<SuccessTestCase<SNumber>> good = examples.map((stn) =>
+        stc(stn.$1, stn.$2, stn.$3, 0, stn.$1.length)
+      ).toList();
+
+      for (SuccessTestCase<SNumber> tc in good) {
+        tc.parses(p);
+      }
+
+
+    });
   });
 }
 

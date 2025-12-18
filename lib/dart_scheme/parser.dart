@@ -2,6 +2,7 @@ import 'package:big_decimal/big_decimal.dart';
 import 'package:dart_scheme/dart_scheme/ast.dart';
 import 'package:dart_scheme/dart_scheme/error_messages.dart' as err;
 import 'package:dart_scheme/dart_scheme/numbers.dart';
+import 'package:dart_scheme/dart_scheme/unparsed_strings.dart';
 import 'package:path/path.dart';
 import 'package:petitparser/petitparser.dart';
 
@@ -12,7 +13,7 @@ extension MapToParser<T1> on Parser<T1> {
 class SchemeGrammar extends GrammarDefinition {
   /* SETTINGS
      allow non-base-10 values with points and exponents
-     whether values with points are exact or inexact by default
+     whether values with radix points are exact or inexact by default
      true/false, #t/#f, #true/#false
      allow improper cons
      use null? or empty?
@@ -653,11 +654,14 @@ class SchemeGrammar extends GrammarDefinition {
   Parser byteVector() => seq3(hashU8Paren(), sByte().star(), rParen());
   Parser sByte() => failure(message: "TODO"); // integer value from 0-255
 
-  Parser<SNumber> number() =>
-      [sNum(2), sNum(8), sNum(10), sNum(16)].toChoiceParser();
+  Parser<SExpr<SNumber>> number() =>
+      [sNum(2), sNum(8), sNum(10), sNum(16)]
+          .toChoiceParser()
+          .token()
+          .map((t) => Atom(t.value, t.toStringToken, SExprType.number));
 
   Parser<SNumber> sNum(int r) =>
-      seq2(prefix(r), complex(r)).map2((exact, number) => SNumber.make(exact, number));
+      seq2(prefix(r), complex(r)).map2((exact, number) => SNumber.make(exact.$2, number));
 
   Parser<NumString> complex(int r) => [
     real(r),
@@ -685,7 +689,7 @@ class SchemeGrammar extends GrammarDefinition {
     decimal(r),
   ].toChoiceParser();
 
-  Parser<WithRadix> decimal(int r) {
+  Parser<WithRadixPoint> decimal(int r) {
     if (r != 10) {
       return failure(message: "decimal only defined for radix 10");
     } else {
@@ -693,18 +697,18 @@ class SchemeGrammar extends GrammarDefinition {
         seq2(
           uinteger(10),
           suffix(),
-        ).map2((bi, expt) => WithRadix(bi.toString(), "", expt)),
+        ).map2((bi, expt) => WithRadixPoint(bi.toString(), "", expt)),
         seq3(
           dot(),
           digit10().plus().flatten(),
           suffix(),
-        ).map3((_, aft, expt) => WithRadix("", aft, expt)),
+        ).map3((_, aft, expt) => WithRadixPoint("", aft, expt)),
         seq4(
           digit10().plus().flatten(),
           dot(),
           digit10().star().flatten(),
           suffix(),
-        ).map4((bef, _, aft, expt) => WithRadix(bef, aft, expt)),
+        ).map4((bef, _, aft, expt) => WithRadixPoint(bef, aft, expt)),
       ].toChoiceParser();
     }
   }
@@ -845,65 +849,4 @@ class SchemeGrammar extends GrammarDefinition {
 extension ToStringToken<T> on Token<T> {
   Token<String> get toStringToken =>
       Token(buffer.substring(start, stop), buffer, start, stop);
-}
-
-abstract class NumString {
-  NumString negate();
-}
-
-// A number of the form <beforeDot>.<afterDot>E<exponent>
-class WithRadix extends NumString {
-  final String beforeDot;
-  final String afterDot;
-  final int exponent;
-
-  WithRadix(this.beforeDot, this.afterDot, this.exponent);
-
-  WithRadix negate() {
-    return WithRadix("-$beforeDot", afterDot, exponent);
-  }
-}
-
-class WeirdNum extends NumString {
-  double value;
-
-  WeirdNum(this.value);
-
-  WeirdNum negate() {
-    throw UnimplementedError("shouldn't be able to negate Inf or NaN");
-  }
-}
-
-class IntString extends NumString {
-  final String digits;
-  final int radix;
-
-  IntString(this.digits, this.radix);
-
-  IntString negate() {
-    return IntString("-$digits", radix);
-  }
-}
-
-class FracString extends NumString {
-  final String num;
-  final String denom;
-  final int radix;
-
-  FracString(this.num, this.denom, this.radix);
-
-  FracString negate() {
-    return FracString("-$num", denom, radix);
-  }
-}
-
-class ComplexString extends NumString {
-  final NumString real;
-  final NumString imag;
-
-  ComplexString(this.real, this.imag);
-
-  ComplexString negate() {
-    throw UnimplementedError("shouldn't have to negate complex number");
-  }
 }
