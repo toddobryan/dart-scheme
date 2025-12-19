@@ -4,6 +4,7 @@ import 'package:dart_scheme/dart_scheme/error_messages.dart' as err;
 import 'package:dart_scheme/dart_scheme/numbers.dart';
 import 'package:dart_scheme/dart_scheme/unparsed_strings.dart';
 import 'package:path/path.dart';
+import 'package:petitparser/debug.dart';
 import 'package:petitparser/petitparser.dart';
 
 extension MapToParser<T1> on Parser<T1> {
@@ -536,8 +537,8 @@ class SchemeGrammar extends GrammarDefinition {
   Parser specialInitial() => anyOf("!\$%&*/:<=>?@^_~");
   Parser subsequent() =>
       [initial(), digit10(), specialSubsequent()].toChoiceParser();
-  Parser digit10() => pattern("0-9");
-  Parser hexDigit() =>
+  Parser<String> digit10() => pattern("0-9");
+  Parser<String> hexDigit() =>
       [digit10(), pattern("a-f", ignoreCase: true)].toChoiceParser();
   Parser explicitSign() => anyOf("+-");
   Parser specialSubsequent() => [explicitSign(), anyOf(".@")].toChoiceParser();
@@ -548,7 +549,7 @@ class SchemeGrammar extends GrammarDefinition {
     char(";"),
   ).map3((_, h, _) => String.fromCharCode(int.parse(h, radix: 16)));
 
-  Parser<String> hexScalarValue() => hexDigit().plus().flatten();
+  Parser<String> hexScalarValue() => hexDigit().plusString();
   Parser<String> mnemonicEscape() =>
       [
             string(r"\a").mapTo("\u0007"),
@@ -684,9 +685,9 @@ class SchemeGrammar extends GrammarDefinition {
   ].toChoiceParser();
 
   Parser<NumString> ureal(int r) => [
-    uinteger(r),
-    seq3(uinteger(r), char("/"), uinteger(r)).map3((n, _, d) => FracString(n.digits, d.digits, r)),
     decimal(r),
+    seq3(uinteger(r), char("/"), uinteger(r)).map3((n, _, d) => FracString(n.digits, d.digits, r)),
+    uinteger(r),
   ].toChoiceParser();
 
   Parser<WithRadixPoint> decimal(int r) {
@@ -694,31 +695,34 @@ class SchemeGrammar extends GrammarDefinition {
       return failure(message: "decimal only defined for radix 10");
     } else {
       return [
+        seq4(
+          digit10().plusString(),
+          dot(),
+          digit10().starString(),
+          suffix(),
+        ).map4((bef, _, aft, expt) => WithRadixPoint(bef, aft, expt)),
+        seq3(
+          dot(),
+          digit10().plusString(),
+          suffix(),
+        ).map3((_, aft, expt) => WithRadixPoint("", aft, expt)),
         seq2(
           uinteger(10),
           suffix(),
         ).map2((bi, expt) => WithRadixPoint(bi.toString(), "", expt)),
-        seq3(
-          dot(),
-          digit10().plus().flatten(),
-          suffix(),
-        ).map3((_, aft, expt) => WithRadixPoint("", aft, expt)),
-        seq4(
-          digit10().plus().flatten(),
-          dot(),
-          digit10().star().flatten(),
-          suffix(),
-        ).map4((bef, _, aft, expt) => WithRadixPoint(bef, aft, expt)),
       ].toChoiceParser();
     }
   }
 
   Parser<IntString> uinteger(int r) =>
-      digit(r).plus().flatten().map((s) => IntString(s, r));
+      digit(r).plusString().map((s) => IntString(s, r));
 
   Parser<(int, Exactness)> prefix(int r) => [
     seq2(radix(r), exactness()).map2((r, e) => (r, e)),
     seq2(exactness(), radix(r)).map2((e, r) => (r, e)),
+    exactness().map((e) => (10, e)),
+    radix(r).map((r) => (r, Exactness.exact)),
+    epsilonWith((10, Exactness.exact)),
   ].toChoiceParser();
 
   Parser<WeirdNum> infnan() => [
@@ -742,7 +746,7 @@ class SchemeGrammar extends GrammarDefinition {
       pattern("+-").optional().flatten().map((s) => s == "-" ? -1 : 1);
 
   Parser<Exactness> exactness() =>
-      seq2(char("#"), pattern("ie", ignoreCase: true)).optional().flatten().map(
+      seq2(char("#"), pattern("ie", ignoreCase: true)).flatten().map(
         (s) =>
             s.toLowerCase().endsWith("i") ? Exactness.inexact : Exactness.exact,
       );
@@ -755,7 +759,7 @@ class SchemeGrammar extends GrammarDefinition {
     } else if (r == 16) {
       return string("#x", ignoreCase: true).mapTo(16);
     } else if (r == 10) {
-      return string("#d", ignoreCase: true).optional().mapTo(10);
+      return string("#d", ignoreCase: true).mapTo(10);
     } else {
       throw ArgumentError(
         "only a radix of 2, 8, 10, or 16 is allowed, given $r",
@@ -763,7 +767,7 @@ class SchemeGrammar extends GrammarDefinition {
     }
   }
 
-  Parser digit(int r) {
+  Parser<String> digit(int r) {
     if (r == 2) {
       return pattern("01");
     } else if (r == 8) {
@@ -849,4 +853,10 @@ class SchemeGrammar extends GrammarDefinition {
 extension ToStringToken<T> on Token<T> {
   Token<String> get toStringToken =>
       Token(buffer.substring(start, stop), buffer, start, stop);
+}
+
+void main() {
+  SchemeGrammar g = SchemeGrammar();
+  Parser<SExpr<SNumber>> p = g.buildFrom(g.number());
+  trace(p).parse("0.0");
 }

@@ -1,3 +1,4 @@
+import 'package:big_decimal/big_decimal.dart';
 import 'package:checks/checks.dart';
 import 'package:checks/context.dart';
 import 'package:dart_scheme/dart_scheme/ast.dart';
@@ -104,7 +105,7 @@ void main() {
 
       List<(String, SExprType, SNumber)> examples = [
         ("0", SExprType.number, SExactInteger(10, BigInt.zero)),
-        ("#e0.0", SExprType.number, SExactInteger(10, BigInt.zero)),
+        ("#e0.0", SExprType.number, SExactWithRadixPoint(BigDecimal.parse("0.0"))),
         ("123", SExprType.number, SExactInteger(10, BigInt.from(123))),
         ("-21", SExprType.number, SExactInteger(10, BigInt.from(-21))),
       ];

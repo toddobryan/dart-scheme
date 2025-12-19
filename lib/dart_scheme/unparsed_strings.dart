@@ -13,14 +13,21 @@ class WithRadixPoint extends NumString {
 
   WithRadixPoint(this.beforeDot, this.afterDot, this.exponent);
 
+  String asDecimalString() {
+    String expPart = exponent == 0 ? "" : "e$exponent";
+    return "$beforeDot.$afterDot$expPart";
+  }
+
+  @override
+  String toString() => asDecimalString();
+
   @override
   WithRadixPoint negate() {
     return WithRadixPoint("-$beforeDot", afterDot, exponent);
   }
 
   double toDouble() {
-    String expPart = exponent == 0 ? "" : "e$exponent";
-    return double.parse("$beforeDot.$afterDot$expPart");
+    return double.parse(asDecimalString());
   }
 
   (BigInt, BigInt) toFrac() {
@@ -87,6 +94,9 @@ class IntString extends NumString {
   IntString negate() {
     return IntString("-$digits", radix);
   }
+
+  @override
+  String toString() => digits;
 }
 
 class FracString extends NumString {
