@@ -260,25 +260,25 @@ void main() {
       Parser<NumString> p10 = getParser(Radix.dec, g.complex);
       Parser<NumString> p16 = getParser(Radix.hex, g.complex);
       
-      check(p2.parse("+i")).succeeds(comp("+i", binInt("0"), binInt("1")), 2);
-      check(p2.parse("-I")).succeeds(comp("-I", binInt("0"), binInt("-1")), 2);
-      check(p2.parse("+INF.0i")).succeeds(comp("+INF.0i", binInt("0"), inf("+INF.0")), 7);
-      check(p2.parse("-nan.0i")).succeeds(comp("-nan.0i", binInt("0"), nan("-nan.0")), 7);
+      check(p2.parse("+i")).succeeds(comp("+i", zero(Radix.bin, ""), one(Radix.bin, "")), 2);
+      check(p2.parse("-I")).succeeds(comp("-I", zero(Radix.bin, ""), negOne(Radix.bin, "")), 2);
+      check(p2.parse("+INF.0i")).succeeds(comp("+INF.0i", zero(Radix.bin, ""), inf("+INF.0")), 7);
+      check(p2.parse("-nan.0i")).succeeds(comp("-nan.0i", zero(Radix.bin, ""), nan("-nan.0")), 7);
 
-      check(p8.parse("+I")).succeeds(comp("+I", octInt("0"), octInt("1")), 2);
-      check(p8.parse("-i")).succeeds(comp("-i", octInt("0"), octInt("-1")), 2);
-      check(p8.parse("-Inf.0i")).succeeds(comp("-Inf.0i", octInt("0"), negInf("-Inf.0")), 7);
-      check(p8.parse("+NAN.0i")).succeeds(comp("+NAN.0i", octInt("0"), nan("+NAN.0")), 7);
+      check(p8.parse("+I")).succeeds(comp("+I", zero(Radix.oct, ""), one(Radix.oct, "")), 2);
+      check(p8.parse("-i")).succeeds(comp("-i", zero(Radix.oct, ""), negOne(Radix.oct, "")), 2);
+      check(p8.parse("-Inf.0i")).succeeds(comp("-Inf.0i", zero(Radix.oct, ""), negInf("-Inf.0")), 7);
+      check(p8.parse("+NAN.0i")).succeeds(comp("+NAN.0i", zero(Radix.oct, ""), nan("+NAN.0")), 7);
 
-      check(p10.parse("+I")).succeeds(comp("+I", decInt("0"), decInt("1")), 2);
-      check(p10.parse("-i")).succeeds(comp("-i", decInt("0"), decInt("-1")), 2);
-      check(p10.parse("+inf.0i")).succeeds(comp("+inf.0i", decInt("0"), inf("+inf.0")), 7);
-      check(p10.parse("-NAN.0i")).succeeds(comp("-NAN.0i", decInt("0"), nan("-NAN.0")), 7);
+      check(p10.parse("+I")).succeeds(comp("+I", zero(Radix.dec, ""), one(Radix.dec, "")), 2);
+      check(p10.parse("-i")).succeeds(comp("-i", zero(Radix.dec, ""), negOne(Radix.dec, "")), 2);
+      check(p10.parse("+inf.0i")).succeeds(comp("+inf.0i", zero(Radix.dec, ""), inf("+inf.0")), 7);
+      check(p10.parse("-NAN.0i")).succeeds(comp("-NAN.0i", zero(Radix.dec, ""), nan("-NAN.0")), 7);
 
-      check(p16.parse("+I")).succeeds(comp("+I", hexInt("0"), hexInt("1")), 2);
-      check(p16.parse("-i")).succeeds(comp("-i", hexInt("0"), hexInt("-1")), 2);
-      check(p16.parse("+inf.0i")).succeeds(comp("+inf.0i", hexInt("0"), inf("+inf.0")), 7);
-      check(p16.parse("-NAN.0i")).succeeds(comp("-NAN.0i", hexInt("0"), nan("-NAN.0")), 7);
+      check(p16.parse("+I")).succeeds(comp("+I", zero(Radix.hex, ""), one(Radix.hex, "")), 2);
+      check(p16.parse("-i")).succeeds(comp("-i", zero(Radix.hex, ""), negOne(Radix.hex, "")), 2);
+      check(p16.parse("+inf.0i")).succeeds(comp("+inf.0i", zero(Radix.hex, ""), inf("+inf.0")), 7);
+      check(p16.parse("-NAN.0i")).succeeds(comp("-NAN.0i", zero(Radix.hex, ""), nan("-NAN.0")), 7);
     });
 
     test("+ri and -ri", () {

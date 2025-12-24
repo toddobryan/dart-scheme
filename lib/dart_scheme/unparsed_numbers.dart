@@ -200,7 +200,8 @@ class WeirdNum extends NumString {
       super == other &&
           other is WeirdNum &&
           runtimeType == other.runtimeType &&
-          value == other.value;
+          (value.isNaN && other.value.isNaN ||
+          value == other.value);
 
   @override
   int get hashCode => Object.hash(super.hashCode, value);
@@ -360,6 +361,9 @@ IntString zero(Radix radix, String input) => IntString(input, radix, "0");
 
 /// convenience method for IntString one in given radix
 IntString one(Radix radix, String input) => IntString(input, radix, "1");
+
+/// convenience method for IntString negative one in given radix
+IntString negOne(Radix radix, String input) => IntString(input, radix, "-1");
 
 /// convenience method for WithRadixPoint
 WithRadixPoint decPoint(String before, String after, String exponent) =>
