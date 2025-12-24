@@ -1,0 +1,159 @@
+import 'package:checks/checks.dart';
+import 'package:dart_scheme/dart_scheme/ast.dart';
+import 'package:dart_scheme/dart_scheme/error_messages.dart' as error_messages;
+import 'package:dart_scheme/dart_scheme/parser.dart';
+import 'package:petitparser/petitparser.dart';
+import 'package:petitparser/reflection.dart';
+import 'package:test/test.dart';
+
+import 'result_checks_helpers.dart';
+
+void main() {
+  final g = SchemeGrammar();
+
+  test("linter", () {
+    Parser p = g.build();
+    check(linter(p)).isEmpty();
+  });
+
+  group("parsing primitives", () {
+    test("booleans", () {
+      Parser<SExpr<bool>> p = g.buildFrom(g.boolean().end());
+
+      check(p.parse("#t")).succeeds("#t", SExprType.boolean, true, 0, 2);
+      check(p.parse("#true")).succeeds("#true", SExprType.boolean, true, 0, 5);
+      check(p.parse("#f")).succeeds("#f", SExprType.boolean, false, 0, 2);
+      check(
+        p.parse("#false"),
+      ).succeeds("#false", SExprType.boolean, false, 0, 6);
+
+      check(p.parse("")).fails(error_messages.boolean, 0);
+      check(p.parse("true")).fails(error_messages.boolean, 0);
+      check(p.parse("#T")).fails(error_messages.boolean, 0);
+      check(p.parse("#ft")).fails(error_messages.eof, 2);
+    });
+
+    test("characters", () {
+      Parser<SExpr<String>> p = g.buildFrom(g.character().end());
+
+      String alarm = r"#\alarm";
+      check(
+        p.parse(alarm),
+      ).succeeds(alarm, SExprType.char, "\u0007", 0, alarm.length);
+      String backspace = r"#\backspace";
+      check(
+        p.parse(backspace),
+      ).succeeds(backspace, SExprType.char, "\u0008", 0, backspace.length);
+      String delete = r"#\delete";
+      check(
+        p.parse(delete),
+      ).succeeds(delete, SExprType.char, "\u007f", 0, delete.length);
+      String escape = r"#\escape";
+      check(
+        p.parse(escape),
+      ).succeeds(escape, SExprType.char, "\u001b", 0, escape.length);
+      String newline = r"#\newline";
+      check(
+        p.parse(newline),
+      ).succeeds(newline, SExprType.char, "\u000a", 0, newline.length);
+      String nul = r"#\null";
+      check(
+        p.parse(nul),
+      ).succeeds(nul, SExprType.char, "\u0000", 0, nul.length);
+      String retn = r"#\return";
+      check(
+        p.parse(retn),
+      ).succeeds(retn, SExprType.char, "\u000d", 0, retn.length);
+      String space = r"#\space";
+      check(
+        p.parse(space),
+      ).succeeds(space, SExprType.char, "\u0020", 0, space.length);
+      String tab = r"#\tab";
+      check(
+        p.parse(tab),
+      ).succeeds(tab, SExprType.char, "\u0009", 0, tab.length);
+      String capA = r"#\A";
+      check(p.parse(capA)).succeeds(capA, SExprType.char, "A", 0, capA.length);
+      String hexForA = r"#\x41;";
+      check(
+        p.parse(hexForA),
+      ).succeeds(hexForA, SExprType.char, "A", 0, hexForA.length);
+      String cyrillicC = "#\\\u0421";
+      check(
+        p.parse(cyrillicC),
+      ).succeeds(cyrillicC, SExprType.char, "\u0421", 0, cyrillicC.length);
+      String rocketAsSurr = "#\\\ud83d\uDE80";
+      check(p.parse("#\\\ud83d\uDE80")).succeeds(
+        rocketAsSurr,
+        SExprType.char,
+        "\u{1f680}",
+        0,
+        rocketAsSurr.length,
+      );
+      String rocketAsCodePt = "#\\\u{1f680}";
+      check(p.parse(rocketAsCodePt)).succeeds(
+        rocketAsCodePt,
+        SExprType.char,
+        "\ud83d\uDE80",
+        0,
+        rocketAsCodePt.length,
+      );
+      String spaceAwk = r"#\ ";
+      check(
+        p.parse(spaceAwk),
+      ).succeeds(spaceAwk, SExprType.char, " ", 0, spaceAwk.length);
+      String newlineAwk = "#\\\n";
+      check(
+        p.parse(newlineAwk),
+      ).succeeds(newlineAwk, SExprType.char, "\n", 0, newlineAwk.length);
+    });
+
+    test("strings", () {
+      Parser<SExpr<String>> p = g.buildFrom(g.sString().end());
+
+      String empty = '""';
+      check(
+        p.parse(empty),
+      ).succeeds(empty, SExprType.string, "", 0, empty.length);
+      String escapes = '"\\"\\n\\\\"';
+      check(
+        p.parse(escapes),
+      ).succeeds(escapes, SExprType.string, '"\n\\', 0, escapes.length);
+      String withSlashToSuppressNewline =
+          r'"abc\'
+          "\n"
+          r'123"';
+      check(p.parse(withSlashToSuppressNewline)).succeeds(
+        withSlashToSuppressNewline,
+        SExprType.string,
+        "abc123",
+        0,
+        withSlashToSuppressNewline.length,
+      );
+      String simpleString = '"abc123"';
+      check(p.parse(simpleString)).succeeds(
+        simpleString,
+        SExprType.string,
+        "abc123",
+        0,
+        simpleString.length,
+      );
+      String unicodeMess = '"⁭╳⌦⒲∛≥⥂⧹⅂⊇⇐⦨⑟⎫⭰⯊⾕⳰✪↢❯♁⮶⪎"';
+      check(p.parse(unicodeMess)).succeeds(
+        unicodeMess,
+        SExprType.string,
+        "⁭╳⌦⒲∛≥⥂⧹⅂⊇⇐⦨⑟⎫⭰⯊⾕⳰✪↢❯♁⮶⪎",
+        0,
+        unicodeMess.length,
+      );
+      String surrogatePairs = '"🍗🍋🍦🍥🍅🌭🍤🍫🍎🍱"';
+      check(p.parse(surrogatePairs)).succeeds(
+        surrogatePairs,
+        SExprType.string,
+        "🍗🍋🍦🍥🍅🌭🍤🍫🍎🍱",
+        0,
+        surrogatePairs.length,
+      );
+    });
+  });
+}

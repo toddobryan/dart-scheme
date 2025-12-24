@@ -1,16 +1,14 @@
-import 'package:big_decimal/big_decimal.dart';
-import 'package:dart_scheme/dart_scheme/ast.dart';
-import 'package:dart_scheme/dart_scheme/error_messages.dart' as err;
-import 'package:dart_scheme/dart_scheme/numbers.dart';
-import 'package:dart_scheme/dart_scheme/unparsed_strings.dart';
-import 'package:path/path.dart';
-import 'package:petitparser/debug.dart';
-import 'package:petitparser/petitparser.dart';
+import "package:dart_scheme/dart_scheme/ast.dart";
+import "package:dart_scheme/dart_scheme/error_messages.dart" as err;
+import "package:dart_scheme/dart_scheme/unparsed_numbers.dart";
+import "package:petitparser/petitparser.dart";
 
+/// map that ignores its argument
 extension MapToParser<T1> on Parser<T1> {
-  Parser<T2> mapTo<T2>(T2 t2) => map((t1) => t2);
+  Parser<T2> mapTo<T2>(T2 t2) => map((T1 t1) => t2);
 }
 
+/// Grammar for R7RS Scheme
 class SchemeGrammar extends GrammarDefinition {
   /* SETTINGS
      allow non-base-10 values with points and exponents
@@ -22,7 +20,7 @@ class SchemeGrammar extends GrammarDefinition {
      keep numbers in radix or not
   */
 
-  Parser<T1> ps1<T1>(Parser<T1> p1) =>
+  /*  Parser<T1> ps1<T1>(Parser<T1> p1) =>
       seq3(lParen(), p1, rParen()).map3((_, t1, _) => t1);
   Parser<(T1, T2)> ps2<T1, T2>(Parser<T1> p1, Parser<T2> p2) =>
       seq4(lParen(), p1, p2, rParen()).map4((_, t1, t2, _) => (t1, t2));
@@ -37,10 +35,12 @@ class SchemeGrammar extends GrammarDefinition {
     p3,
     rParen(),
   ).map5((_, t1, t2, t3, _) => (t1, t2, t3));
+*/
 
+  /// start production for the Scheme grammar
   @override
-  Parser start() => ref(program);
-
+  Parser start() => string("scheme"); // TODO
+  /*
   // 7.1.6 Programs and definitions
 
   Parser program() =>
@@ -480,13 +480,18 @@ class SchemeGrammar extends GrammarDefinition {
     doubleQuote(),
     semicolon(),
   ].toChoiceParser();
-
+*/
+  /// Whitespace allowed inside a line
   Parser<String> intralineWhitespace() => pattern(" \t");
+  /*
   Parser<String> sWhitespace() =>
       [intralineWhitespace(), lineEnding()].toChoiceParser();
+*/
+  /// A legal line-ending character or characters
   Parser<String> lineEnding() =>
+      // ignore: always_specify_types
       [char("\n"), string("\r\n"), char("\r")].toChoiceParser();
-
+  /*
   Parser<String> lParen() => char("(");
   Parser<String> rParen() => char(")");
   Parser<String> hashParen() => string("#(");
@@ -494,9 +499,16 @@ class SchemeGrammar extends GrammarDefinition {
   Parser<String> backtick() => char("`");
   Parser<String> comma() => char(",");
   Parser<String> commaAt() => string(",@");
+*/
+  /// Parses a period
   Parser<String> dot() => char(".");
+  /*
   Parser<String> verticalLine() => char("|");
+*/
+
+  /// Parses a single double-quote
   Parser<String> doubleQuote() => char('"');
+  /*
   Parser<String> semicolon() => char(";");
 
   Parser<String> comment() => [
@@ -534,31 +546,40 @@ class SchemeGrammar extends GrammarDefinition {
   ].toChoiceParser();
 
   Parser initial() => [letter(), specialInitial()].toChoiceParser();
-  Parser specialInitial() => anyOf("!\$%&*/:<=>?@^_~");
+  Parser specialInitial() => anyOf("!\$%*&/:<=>?@^_~");
   Parser subsequent() =>
       [initial(), digit10(), specialSubsequent()].toChoiceParser();
-  Parser<String> digit10() => pattern("0-9");
-  Parser<String> hexDigit() =>
-      [digit10(), pattern("a-f", ignoreCase: true)].toChoiceParser();
-  Parser explicitSign() => anyOf("+-");
-  Parser specialSubsequent() => [explicitSign(), anyOf(".@")].toChoiceParser();
+*/
 
+  /// Parses a single digit legal for a base-10 number
+  Parser<String> digit10() => Radix.dec.digitParser;
+
+  /// Parses a single digit legal for a base-16 number
+  Parser<String> hexDigit() => Radix.hex.digitParser;
+  /*  Parser explicitSign() => anyOf("+-");
+  Parser specialSubsequent() => [explicitSign(), anyOf(".@")].toChoiceParser();
+*/
+  /// Parses an inline hex escape characte
+  /// of the form \xH+; where H is a hex digit
   Parser<String> inlineHexEscape() => seq3(
     string("\\x"),
     hexScalarValue(),
     char(";"),
-  ).map3((_, h, _) => String.fromCharCode(int.parse(h, radix: 16)));
+  ).map3((_, String h, _) => String.fromCharCode(int.parse(h, radix: 16)));
 
+  /// Parses one or more hex digits
   Parser<String> hexScalarValue() => hexDigit().plusString();
-  Parser<String> mnemonicEscape() =>
-      [
-            string(r"\a").mapTo("\u0007"),
-            string(r"\b").mapTo("\u0008"),
-            string(r"\n").mapTo("\u000a"),
-            string(r"\r").mapTo("\u000d"),
-            string(r"\t").mapTo("\u0009"),
-          ].toChoiceParser()
-          as Parser<String>;
+
+  /// Parses backslash escapes
+  Parser<String> mnemonicEscape() => <Parser<String>>[
+    string(r"\a").mapTo("\u0007"),
+    string(r"\b").mapTo("\u0008"),
+    string(r"\n").mapTo("\u000a"),
+    string(r"\r").mapTo("\u000d"),
+    string(r"\t").mapTo("\u0009"),
+  ].toChoiceParser();
+
+  /*
   Parser peculiarIdentifier() => seq2(
     seq2(
       [string("+i"), string("-i"), infnan()].toChoiceParser(),
@@ -580,9 +601,10 @@ class SchemeGrammar extends GrammarDefinition {
     char("\\"),
     pattern("^|\\"),
   ].toChoiceParser();
-
+*/
+  /// Parses #t, #true, #f, and #false
   Parser<SExpr<bool>> boolean() =>
-      [
+      <Parser<SExpr<bool>>>[
         [
           string("#true"),
           string("#t"),
@@ -594,6 +616,7 @@ class SchemeGrammar extends GrammarDefinition {
         failureJoiner: (f1, _) => Failure(f1.buffer, f1.position, err.boolean),
       );
 
+  /// Parses a legal Scheme character literal
   Parser<SExpr<String>> character() => [
     seq2(string("#\\"), characterName())
         .map2((_, c) => c)
@@ -615,6 +638,7 @@ class SchemeGrammar extends GrammarDefinition {
         .map((t) => Atom(t.value, t.toStringToken, SExprType.char)),
   ].toChoiceParser();
 
+  /// Parses the names of named characters
   Parser<String> characterName() => [
     string("alarm").mapTo("\u0007"),
     string("backspace").mapTo("\u0008"),
@@ -627,6 +651,7 @@ class SchemeGrammar extends GrammarDefinition {
     string("tab").mapTo("\u0009"),
   ].toChoiceParser();
 
+  /// Parses a legal Scheme string
   Parser<SExpr<String>> sString() =>
       seq3(
             doubleQuote(),
@@ -651,7 +676,7 @@ class SchemeGrammar extends GrammarDefinition {
     string(r"\|").mapTo("|"),
     pattern(r'^"\'),
   ].toChoiceParser();
-
+  /*
   Parser byteVector() => seq3(hashU8Paren(), sByte().star(), rParen());
   Parser sByte() => failure(message: "TODO"); // integer value from 0-255
 
@@ -663,35 +688,83 @@ class SchemeGrammar extends GrammarDefinition {
 
   Parser<SNumber> sNum(int r) =>
       seq2(prefix(r), complex(r)).map2((exact, number) => SNumber.make(exact.$2, number));
-
-  Parser<NumString> complex(int r) => [
+*/
+  /// Parses a legal complex number into a NumString
+  Parser<NumString> complex(Radix r) => [
+    seq3(real(r), char("@"), real(r))
+        .map3((rad, _, theta) => PolarComplexString("$rad@$theta", rad, theta))
+        .labeled("rad@theta"),
+    seq4(
+      real(r),
+      char("+"),
+      ureal(r),
+      char("i", ignoreCase: true),
+    ).map4((rl, _, im, i) => ComplexString("${rl.input}+${im.input}$i", rl, im)).labeled("r+ri"),
+    seq4(
+      real(r),
+      char("-"),
+      ureal(r),
+      char("i", ignoreCase: true),
+    ).map4((rl, _, im, i) => ComplexString("${rl.input}-${im.input}$i", rl, im.negate())).labeled("r-ri"),
+    seq3(
+      real(r),
+      char("+"),
+      char("i", ignoreCase: true),
+    ).map3((rl, _, i) => ComplexString("${rl.input}+$i", rl, IntString("", r, "1"))).labeled("r+i"),
+    seq3(
+      real(r),
+      char("-"),
+      char("i", ignoreCase: true),
+    ).map3((rl, _, i) => ComplexString("${rl.input}+$i", rl, IntString("", r, "-1"))).labeled("r-i"),
+    seq3(
+      real(r),
+      infnan(),
+      char("i", ignoreCase: true),
+    ).map3((rl, inf, i) => ComplexString("${rl.input}${inf.input}$i", rl, inf)).labeled("r-infnani"),
+    seq3(
+      char("+"),
+      ureal(r),
+      char("i", ignoreCase: true),
+    ).map3((_, im, i) => ComplexString("+${im.input}$i", IntString("", r, "0"), im)).labeled("+ri"),
+    seq3(char("-"), ureal(r), char("i", ignoreCase: true))
+        .map3((_, rl, i) => ComplexString("-${rl.input}$i", IntString("", r, "0"), rl.negate()))
+        .labeled("-ri"),
+    seq2(
+      infnan(),
+      char("i", ignoreCase: true),
+    ).map2((wn, i) => ComplexString("${wn.input}$i", IntString("", r, "0"), wn)).labeled("infnani"),
     real(r),
-    //seq3(real(r), char("@"), real(r)), TODO: polar coordinates
-    seq4(real(r), char("+"), ureal(r), char("i", ignoreCase: true)).map4((rl, _, im, _) => ComplexString(rl, im)),
-    seq4(real(r), char("-"), ureal(r), char("i", ignoreCase: true)).map4((rl, _, im, _) => ComplexString(rl, im.negate())),
-    seq3(real(r), char("+"), char("i", ignoreCase: true)).map3((rl, _, _) => ComplexString(rl, IntString("1", r))),
-    seq3(real(r), char("-"), char("i", ignoreCase: true)).map3((rl, _, _) => ComplexString(rl, IntString("-1", r))),
-    seq3(real(r), infnan(), char("i", ignoreCase: true)).map3((rl, inf, _) => ComplexString(rl, inf)),
-    seq3(char("+"), ureal(r), char("i", ignoreCase: true)).map3((_, rl, _) => ComplexString(IntString("0", r), rl)),
-    seq3(char("-"), ureal(r), char("i", ignoreCase: true)).map3((_, rl, _) => ComplexString(IntString("0", r), rl.negate())),
-    seq2(infnan(), char("i", ignoreCase: true)).map2((wn, _) => ComplexString(IntString("0", r), wn)),
-    string("+i", ignoreCase: true).mapTo(ComplexString(IntString("0", r), IntString("1", r))),
-    string("-i", ignoreCase: true).mapTo(ComplexString(IntString("0", r), IntString("-1", r))),
-  ].toChoiceParser();
+    string(
+      "+i",
+      ignoreCase: true,
+    ).map((i) => ComplexString(i, IntString("", r, "0"), IntString("", r, "1"))).labeled("+i"),
+    string(
+      "-i",
+      ignoreCase: true,
+    ).map((i) => ComplexString(i, IntString("", r, "0"), IntString("", r, "-1"))).labeled("-i"),
+  ].toChoiceParser().labeled("complex");
 
-  Parser<NumString> real(int r) => [
-    seq2(sign(), ureal(r)).map2((s, u) => s < 0 ? u.negate() : u),
+  /// Parses a legal real number into a NumString
+  Parser<NumString> real(Radix r) => [
+    seq2(sign(), ureal(r)).map2((s, u) => s == "-" ? u.negate() : u),
     infnan(),
-  ].toChoiceParser();
+  ].toChoiceParser().labeled("real");
 
-  Parser<NumString> ureal(int r) => [
+  /// Parses a legal unsigned real number into a NumString
+  Parser<NumString> ureal(Radix r) => [
     decimal(r),
-    seq3(uinteger(r), char("/"), uinteger(r)).map3((n, _, d) => FracString(n.digits, d.digits, r)),
+    seq3(
+      uinteger(r),
+      char("/"),
+      uinteger(r),
+    ).map3((n, _, d) => FracString(r, n.input, d.input)),
     uinteger(r),
-  ].toChoiceParser();
+  ].toChoiceParser().labeled("ureal");
 
-  Parser<WithRadixPoint> decimal(int r) {
-    if (r != 10) {
+  /// Parses a legal number with a radix point and optional exponent
+  /// Currently only handles base 10
+  Parser<WithRadixPoint> decimal(Radix r) {
+    if (r != Radix.dec) {
       return failure(message: "decimal only defined for radix 10");
     } else {
       return [
@@ -699,24 +772,25 @@ class SchemeGrammar extends GrammarDefinition {
           digit10().plusString(),
           dot(),
           digit10().starString(),
-          suffix(),
-        ).map4((bef, _, aft, expt) => WithRadixPoint(bef, aft, expt)),
+          suffix().optional(),
+        ).map4((bef, _, aft, expt) => WithRadixPoint(bef, aft, expt ?? Suffix(""))),
         seq3(
           dot(),
           digit10().plusString(),
-          suffix(),
-        ).map3((_, aft, expt) => WithRadixPoint("", aft, expt)),
+          suffix().optional(),
+        ).map3((_, aft, expt) => WithRadixPoint("", aft, expt ?? Suffix(""))),
         seq2(
-          uinteger(10),
+          uinteger(Radix.dec).flatten(),
           suffix(),
-        ).map2((bi, expt) => WithRadixPoint(bi.toString(), "", expt)),
-      ].toChoiceParser();
+        ).map2((bi, expt) => WithRadixPoint(bi, "", expt)),
+      ].toChoiceParser().labeled("decimal");
     }
   }
 
-  Parser<IntString> uinteger(int r) =>
-      digit(r).plusString().map((s) => IntString(s, r));
-
+  /// Parses an unsigned integer into a NumString
+  Parser<IntString> uinteger(Radix r) =>
+      digit(r).plusString().map((s) => IntString(s, r, s)).labeled("uinteger");
+  /*
   Parser<(int, Exactness)> prefix(int r) => [
     seq2(radix(r), exactness()).map2((r, e) => (r, e)),
     seq2(exactness(), radix(r)).map2((e, r) => (r, e)),
@@ -724,27 +798,40 @@ class SchemeGrammar extends GrammarDefinition {
     radix(r).map((r) => (r, Exactness.exact)),
     epsilonWith((10, Exactness.exact)),
   ].toChoiceParser();
-
+*/
+  /// Parses the four infinite and not-a-number strings
   Parser<WeirdNum> infnan() => [
-    string("+inf.0", ignoreCase: true).mapTo(WeirdNum(double.infinity)),
-    string("-inf.0", ignoreCase: true).mapTo(WeirdNum(double.negativeInfinity)),
-    string("+nan.0", ignoreCase: true).mapTo(WeirdNum(double.nan)),
-    string("-nan.0", ignoreCase: true).mapTo(WeirdNum(double.nan)),
-  ].toChoiceParser();
+    string(
+      "+inf.0",
+      ignoreCase: true,
+    ).map((String s) => WeirdNum(s, double.infinity)),
+    string(
+      "-inf.0",
+      ignoreCase: true,
+    ).map((String s) => WeirdNum(s, double.negativeInfinity)),
+    string(
+      "+nan.0",
+      ignoreCase: true,
+    ).map((String s) => WeirdNum(s, double.nan)),
+    string(
+      "-nan.0",
+      ignoreCase: true,
+    ).map((String s) => WeirdNum(s, double.nan)),
+  ].toChoiceParser().labeled("infnan");
 
-  // returns the value of the exponent, positive or negative
-  Parser<int> suffix() => seq3(
+  /// Parses an exponent (e.g., E20 or E-5) into a int
+  Parser<Suffix> suffix() => seq3(
     exponentMarker(),
     sign(), // returns 1 or -1
-    digit10().plus().flatten(),
-  ).map3((_, s, ds) => s * int.parse(ds)).optional().map((i) => i ?? 0);
+    digit10().plusString(),
+  ).map3((e, s, ds) => Suffix("$e$s$ds"));
 
-  Parser exponentMarker() => char("e", ignoreCase: true);
+  /// The legal markers for exponents
+  Parser<String> exponentMarker() => char("e", ignoreCase: true);
 
-  // returns 1 or -1
-  Parser<int> sign() =>
-      pattern("+-").optional().flatten().map((s) => s == "-" ? -1 : 1);
-
+  /// Parses "+", "", or "-" to return 1, 1, or -1, respectively
+  Parser<String> sign() => pattern("+-").optional().flatten();
+  /*
   Parser<Exactness> exactness() =>
       seq2(char("#"), pattern("ie", ignoreCase: true)).flatten().map(
         (s) =>
@@ -766,23 +853,11 @@ class SchemeGrammar extends GrammarDefinition {
       );
     }
   }
+*/
+  /// Parses a single digit in the given base
+  Parser<String> digit(Radix r) => r.digitParser;
 
-  Parser<String> digit(int r) {
-    if (r == 2) {
-      return pattern("01");
-    } else if (r == 8) {
-      return pattern("0-7");
-    } else if (r == 10) {
-      return digit10();
-    } else if (r == 16) {
-      return [digit10(), pattern("abcdef", ignoreCase: true)].toChoiceParser();
-    } else {
-      throw ArgumentError(
-        "only a radix of 2, 8, 10, or 16 is allowed, given $r",
-      );
-    }
-  }
-
+  /*
   Parser syntacticKeyword() => [
     expressionKeyword(),
     sElse(),
@@ -848,15 +923,48 @@ class SchemeGrammar extends GrammarDefinition {
   Parser quasiquote() => string("quasiquote");
   Parser letSyntax() => string("let-syntax");
   Parser letrecSyntax() => string("letrec-syntax");
+*/
 }
 
+/// Legal scheme radixes: 2, 8, 10, 16 (plus one for inf and nan)
+enum Radix {
+  /// binary
+  bin(2, "01"),
+
+  /// octal
+  oct(8, "01234567"),
+
+  /// decimal
+  dec(10, "012346789"),
+
+  /// hexadecimal
+  hex(16, "0123456789abcdefABCDEF"),
+
+  /// no real radix (inf or nan)
+  infNan(0, "");
+
+  /// the numeric value of the radix
+  final int value;
+
+  /// a string containing the legal digits for the radix
+  final String legalDigits;
+
+  /// constructor
+  const Radix(this.value, this.legalDigits);
+
+  /// parser for a digit in this Radix
+  Parser<String> get digitParser => switch (this) {
+    bin => pattern("01"),
+    oct => pattern("0-7"),
+    dec => pattern("0-9"),
+    hex => pattern("0-9a-f", ignoreCase: true),
+    infNan => throw ArgumentError("can't get digitParser from InfNan"),
+  };
+}
+
+/// Converts a Token<T> into a Token<String> where the String is
+/// the substring read to create the token
 extension ToStringToken<T> on Token<T> {
   Token<String> get toStringToken =>
       Token(buffer.substring(start, stop), buffer, start, stop);
-}
-
-void main() {
-  SchemeGrammar g = SchemeGrammar();
-  Parser<SExpr<SNumber>> p = g.buildFrom(g.number());
-  trace(p).parse("0.0");
 }

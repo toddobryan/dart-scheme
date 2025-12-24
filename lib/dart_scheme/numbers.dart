@@ -1,9 +1,10 @@
-import 'package:big_decimal/big_decimal.dart';
-import 'package:dart_scheme/dart_scheme/ast.dart';
-import 'package:dart_scheme/dart_scheme/unparsed_strings.dart';
+import "package:big_decimal/big_decimal.dart";
+import "package:dart_scheme/dart_scheme/ast.dart";
+import "package:dart_scheme/dart_scheme/parser.dart";
+import "package:dart_scheme/dart_scheme/unparsed_numbers.dart";
 
 abstract class SNumber {
-  int radix;
+  Radix radix;
 
   SNumber(this.radix);
 
@@ -15,35 +16,45 @@ abstract class SNumber {
       } else if (number is IntString) {
         return SExactInteger(
           number.radix,
-          BigInt.parse(number.digits, radix: number.radix),
+          BigInt.parse(number.input, radix: number.radix.value),
         );
       } else if (number is FracString) {
         return SExactRational(
           number.radix,
-          BigInt.parse(number.num, radix: number.radix),
-          BigInt.parse(number.denom, radix: number.radix),
+          BigInt.parse(number.numerator, radix: number.radix.value),
+          BigInt.parse(number.denominator, radix: number.radix.value),
         );
       } else if (number is WithRadixPoint) {
         return SExactWithRadixPoint(BigDecimal.parse(number.asDecimalString()));
       } else if (number is ComplexString) {
-        SExactReal real = SNumber.make(ex, number.real) as SExactReal;
-        SExactReal imag = SNumber.make(ex, number.imag) as SExactReal;
+        final SExactReal real = SNumber.make(ex, number.real) as SExactReal;
+        final SExactReal imag = SNumber.make(ex, number.imag) as SExactReal;
         return SExactComplex(real.radix, real, imag);
       } else {
         throw ArgumentError("Unexpected NumberString: $number");
       }
-    } else { // it's an inexact number, so store as a double
+    } else {
+      // it's an inexact number, so store as a double
       if (number is WeirdNum) {
-        return SInexactReal(10, number.value);
+        return SInexactReal(Radix.infNan, number.value);
       } else if (number is FracString) {
-        double num = BigInt.parse(number.num, radix: number.radix).toDouble();
-        double denom = BigInt.parse(number.denom, radix: number.radix).toDouble();
+        final double num = BigInt.parse(
+          number.numerator,
+          radix: number.radix.value,
+        ).toDouble();
+        final double denom = BigInt.parse(
+          number.denominator,
+          radix: number.radix.value,
+        ).toDouble();
         return SInexactReal(number.radix, num / denom);
       } else if (number is IntString) {
-        return SInexactReal(number.radix, BigInt.parse(number.digits, radix: number.radix).toDouble());
+        return SInexactReal(
+          number.radix,
+          BigInt.parse(number.input, radix: number.radix.value).toDouble(),
+        );
       } else if (number is ComplexString) {
-        SInexactReal real = SNumber.make(ex, number.real) as SInexactReal;
-        SInexactReal imag = SNumber.make(ex, number.imag) as SInexactReal;
+        final SInexactReal real = SNumber.make(ex, number.real) as SInexactReal;
+        final SInexactReal imag = SNumber.make(ex, number.imag) as SInexactReal;
         return SInexactComplex(real.radix, real, imag);
       } else {
         throw ArgumentError("Unexpected NumberString: $number");
@@ -75,7 +86,9 @@ abstract class SExactReal extends SExact {
 
   @override
   bool operator ==(Object other) {
-    if (identical(this, other)) return true;
+    if (identical(this, other)) {
+      return true;
+    }
 
     if (other is SExactReal) {
       return toRational() == other.toRational();
@@ -94,9 +107,9 @@ class SExactRational extends SExactReal {
 
   SExactRational(super.radix, this.num, this.denom);
 
-  factory SExactRational.fromBigInts(int radix, BigInt num, BigInt denom) {
+  factory SExactRational.fromBigInts(Radix radix, BigInt num, BigInt denom) {
     assert(denom > BigInt.zero, "denominator should be positive");
-    BigInt gcd = num.gcd(denom);
+    final BigInt gcd = num.gcd(denom);
     return SExactRational(radix, num ~/ gcd, denom ~/ gcd);
   }
 
@@ -105,11 +118,11 @@ class SExactRational extends SExactReal {
 
   @override
   bool operator ==(Object other) {
-    if (identical(this, other)) return true;
+    if (identical(this, other)) {
+      return true;
+    }
 
-    return other is SExactRational &&
-        other.num == num &&
-        other.denom == denom;
+    return other is SExactRational && other.num == num && other.denom == denom;
   }
 
   @override
@@ -123,24 +136,23 @@ class SExactRational extends SExactReal {
 class SExactWithRadixPoint extends SExactReal {
   final BigDecimal value;
 
-  SExactWithRadixPoint(this.value) : super(10);
+  SExactWithRadixPoint(this.value) : super(Radix.dec);
 
-  factory SExactWithRadixPoint.fromBigDecimal(BigDecimal value) {
-    return SExactWithRadixPoint(value);
-  }
+  factory SExactWithRadixPoint.fromBigDecimal(BigDecimal value) =>
+      SExactWithRadixPoint(value);
 
+  @override
   SExactRational toRational() {
     if (value.scale <= 0) {
       return SExactRational(radix, value.toBigInt(), BigInt.one);
     }
-    BigInt num = value.intVal;
-    BigInt denom = BigInt.from(10).pow(value.scale);
+    final BigInt num = value.intVal;
+    final BigInt denom = BigInt.from(10).pow(value.scale);
     return SExactRational(radix, num, denom);
   }
 
   @override
   String toString() => value.toString();
-
 }
 
 class SExactInteger extends SExactReal {
@@ -160,6 +172,7 @@ class SInexactReal extends SInexact {
 
   SInexactReal(super.radix, this.value);
 
+  @override
   SInexactComplex toComplex() =>
       SInexactComplex(radix, this, SInexactReal(radix, 0.0));
 
@@ -167,8 +180,7 @@ class SInexactReal extends SInexact {
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
 
-    return other is SInexactReal &&
-      value == other.value;
+    return other is SInexactReal && value == other.value;
   }
 
   @override
@@ -186,11 +198,11 @@ class SExactComplex extends SExact {
 
   @override
   bool operator ==(Object other) {
-    if (identical(this, other)) return true;
+    if (identical(this, other)) {
+      return true;
+    }
 
-    return other is SExactComplex
-        && real == other.real
-        && imag == other.imag;
+    return other is SExactComplex && real == other.real && imag == other.imag;
   }
 
   @override
@@ -208,11 +220,11 @@ class SInexactComplex extends SInexact {
 
   @override
   bool operator ==(Object other) {
-    if (identical(this, other)) return true;
+    if (identical(this, other)) {
+      return true;
+    }
 
-    return other is SInexactComplex
-        && real == other.real
-        && imag == other.imag;
+    return other is SInexactComplex && real == other.real && imag == other.imag;
   }
 
   @override
