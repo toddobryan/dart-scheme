@@ -1,142 +1,166 @@
+import "dart:math";
+
 import "package:big_decimal/big_decimal.dart";
-import "package:dart_scheme/dart_scheme/ast.dart";
+import "package:dart_mappable/dart_mappable.dart";
 import "package:dart_scheme/dart_scheme/parser.dart";
 import "package:dart_scheme/dart_scheme/unparsed_numbers.dart";
+import "package:petitparser/parser.dart";
+
+part "numbers.mapper.dart";
+
 
 abstract class SNumber {
-  Radix radix;
+  final Radix radix;
 
-  SNumber(this.radix);
+  const SNumber(this.radix);
 
-  static SNumber make(Exactness ex, NumString number) {
-    print("$ex, $number");
-    if (ex == Exactness.exact) {
-      if (number is WeirdNum) {
-        throw Exception("Can't create exact Inf or NaN value");
-      } else if (number is IntString) {
-        return SExactInteger(
-          number.radix,
-          BigInt.parse(number.input, radix: number.radix.value),
-        );
-      } else if (number is FracString) {
-        return SExactRational(
-          number.radix,
-          BigInt.parse(number.numerator, radix: number.radix.value),
-          BigInt.parse(number.denominator, radix: number.radix.value),
-        );
-      } else if (number is WithRadixPoint) {
-        return SExactWithRadixPoint(BigDecimal.parse(number.asDecimalString()));
-      } else if (number is ComplexString) {
-        final SExactReal real = SNumber.make(ex, number.real) as SExactReal;
-        final SExactReal imag = SNumber.make(ex, number.imag) as SExactReal;
-        return SExactComplex(real.radix, real, imag);
-      } else {
-        throw ArgumentError("Unexpected NumberString: $number");
-      }
-    } else {
-      // it's an inexact number, so store as a double
-      if (number is WeirdNum) {
-        return SInexactReal(Radix.infNan, number.value);
-      } else if (number is FracString) {
-        final double num = BigInt.parse(
-          number.numerator,
-          radix: number.radix.value,
-        ).toDouble();
-        final double denom = BigInt.parse(
-          number.denominator,
-          radix: number.radix.value,
-        ).toDouble();
-        return SInexactReal(number.radix, num / denom);
-      } else if (number is IntString) {
-        return SInexactReal(
-          number.radix,
-          BigInt.parse(number.input, radix: number.radix.value).toDouble(),
-        );
-      } else if (number is ComplexString) {
-        final SInexactReal real = SNumber.make(ex, number.real) as SInexactReal;
-        final SInexactReal imag = SNumber.make(ex, number.imag) as SInexactReal;
-        return SInexactComplex(real.radix, real, imag);
-      } else {
-        throw ArgumentError("Unexpected NumberString: $number");
-      }
-    }
+  static SNumber make(PrefixedNumString number) {
+    assert(number.prefix.radix ==
+        number.numString.radix, "Radix values don't match");
+    return _make(number.prefix.exactness, number.numString);
   }
+
+  static SNumber _make(Exactness ex, NumString numString) =>
+      switch (ex) {
+        Exactness.exact =>
+        switch (numString) {
+          WeirdNum() =>
+          throw ArgumentError("Can't create exact Inf or NaN value"),
+          IntString(radix: final Radix r, digits: final String d) =>
+              SExactInteger(r, BigInt.parse(d, radix: r.value)),
+          FracString(
+          radix: final Radix r,
+          numerator: final String n,
+          denominator: final String d
+          ) =>
+              SExactRational(
+                r,
+                BigInt.parse(n, radix: r.value),
+                BigInt.parse(d, radix: r.value),
+              ),
+          WithRadixPoint(input: final String i) =>
+              SExactWithRadixPoint(BigDecimal.parse(i)),
+          CartesianComplexString(
+          radix: final Radix r,
+          real: final NumString re,
+          imag: final NumString im
+          ) =>
+              SExactComplex(
+                r,
+                SNumber._make(ex, re) as SExactReal,
+                SNumber._make(ex, im) as SExactReal,
+              ),
+          PolarComplexString(
+          radix: final Radix r,
+          radius: final RealString magString,
+          theta: final RealString angleString,
+          ) => _makeExactComplexFromPolar(r, magString, angleString),
+        },
+        Exactness.inexact =>
+        switch (numString) {
+          WeirdNum(radix: final Radix r, value: final double v) =>
+              SInexactReal(r, v),
+          WithRadixPoint(input: final String i) =>
+              SInexactReal(Radix.dec, double.parse(i)),
+          FracString(radix: final Radix r, numerator: final String n, denominator: final String d) =>
+              _makeInexactFraction(r, n, d),
+          IntString(radix: final Radix r, digits: final String d) =>
+              SInexactReal(r, BigInt.parse(d, radix: r.value).toDouble()),
+          CartesianComplexString(
+          radix: final Radix r,
+          real: final RealString re,
+          imag: final RealString im,
+          ) =>
+              SInexactComplex(
+                r,
+                SNumber._make(Exactness.inexact, re) as SInexactReal,
+                SNumber._make(Exactness.inexact, im) as SInexactReal,
+              ),
+          PolarComplexString(
+          radix: final Radix r,
+          radius: final RealString magString,
+          theta: final RealString angleString,
+          ) => _makeInexactComplexFromPolar(r, magString, angleString),
+        },
+      };
+}
+
+SExactComplex _makeExactComplexFromPolar(Radix r, RealString magString, RealString angleString) {
+  final double mag = (SNumber._make(Exactness.exact, magString) as SExactReal).toDouble();
+  if (mag.isInfinite || mag.isNaN) {
+    throw ArgumentError("polar coordinates must be representable as finite doubles, but ${magString.input} is not");
+  }
+  final double angle = (SNumber._make(Exactness.exact, angleString) as SExactReal).toDouble();
+  if (angle.isInfinite || angle.isNaN) {
+    throw ArgumentError("polar coordinates must be representable as finite doubles, but ${angleString.input} is not");
+  }
+  final SExactReal re = SExactWithRadixPoint(BigDecimal.parse("${mag * cos(angle)}"));
+  final SExactReal im = SExactWithRadixPoint(BigDecimal.parse("${mag * sin(angle)}"));
+  return SExactComplex(Radix.dec, re, im);
+}
+
+SInexactComplex _makeInexactComplexFromPolar(Radix r, RealString magString, RealString angleString) {
+  final double mag = (SNumber._make(Exactness.exact, magString) as SExactReal).toDouble();
+  final double angle = (SNumber._make(Exactness.exact, angleString) as SExactReal).toDouble();
+  return SInexactComplex(r, SInexactReal(r, mag * cos(angle)), SInexactReal(r, mag * sin(angle)));
+}
+
+SInexactReal _makeInexactFraction(Radix r, String n, String d) {
+  final BigInt numer = BigInt.parse(n, radix: r.value);
+  final BigInt denom = BigInt.parse(d, radix: r.value);
+  return SInexactReal(r, numer / denom);
 }
 
 abstract class SExact extends SNumber {
-  SExact(super.radix);
+  const SExact(super.radix);
 
   SExactComplex toComplex();
 }
 
 abstract class SInexact extends SNumber {
-  SInexact(super.radix);
+  const SInexact(super.radix);
 
   SInexactComplex toComplex();
 }
 
 abstract class SExactReal extends SExact {
-  SExactReal(super.radix);
+  const SExactReal(super.radix);
+
+  double toDouble();
 
   SExactRational toRational();
 
   @override
   SExactComplex toComplex() =>
       SExactComplex(radix, this, SExactInteger(radix, BigInt.zero));
-
-  @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) {
-      return true;
-    }
-
-    if (other is SExactReal) {
-      return toRational() == other.toRational();
-    } else {
-      return false;
-    }
-  }
-
-  @override
-  int get hashCode => toRational().hashCode;
 }
 
-class SExactRational extends SExactReal {
-  final BigInt num;
-  final BigInt denom;
+@MappableClass()
+class SExactRational extends SExactReal with SExactRationalMappable {
+  final BigInt numerator;
+  final BigInt denominator;
 
-  SExactRational(super.radix, this.num, this.denom);
+  const SExactRational(super.radix, this.numerator, this.denominator);
 
-  factory SExactRational.fromBigInts(Radix radix, BigInt num, BigInt denom) {
-    assert(denom > BigInt.zero, "denominator should be positive");
-    final BigInt gcd = num.gcd(denom);
-    return SExactRational(radix, num ~/ gcd, denom ~/ gcd);
+  factory SExactRational.fromBigInts(Radix radix, BigInt numerator, BigInt denominator) {
+    assert(denominator > BigInt.zero, "denominator should be positive");
+    final BigInt gcd = numerator.gcd(denominator);
+    return SExactRational(radix, numerator ~/ gcd, denominator ~/ gcd);
   }
 
   @override
   SExactRational toRational() => this;
 
   @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) {
-      return true;
-    }
-
-    return other is SExactRational && other.num == num && other.denom == denom;
-  }
-
-  @override
-  int get hashCode => Object.hash(num, denom);
-
-  @override
-  String toString() => "$num/$denom";
+  double toDouble() => numerator / denominator;
 }
 
 // For now, only handles base 10
-class SExactWithRadixPoint extends SExactReal {
+@MappableClass()
+class SExactWithRadixPoint extends SExactReal with SExactWithRadixPointMappable {
   final BigDecimal value;
 
-  SExactWithRadixPoint(this.value) : super(Radix.dec);
+  const SExactWithRadixPoint(this.value) : super(Radix.dec);
 
   factory SExactWithRadixPoint.fromBigDecimal(BigDecimal value) =>
       SExactWithRadixPoint(value);
@@ -152,66 +176,66 @@ class SExactWithRadixPoint extends SExactReal {
   }
 
   @override
+  double toDouble() => value.toDouble();
+
+  @override
   String toString() => value.toString();
 }
 
-class SExactInteger extends SExactReal {
+@MappableClass()
+class SExactInteger extends SExactReal with SExactIntegerMappable {
   final BigInt value;
 
-  SExactInteger(super.radix, this.value);
+  const SExactInteger(super.radix, this.value);
 
   @override
   SExactRational toRational() => SExactRational(radix, value, BigInt.one);
 
   @override
+  double toDouble() => value.toDouble();
+
+  @override
   String toString() => value.toString();
 }
 
-class SInexactReal extends SInexact {
-  double value;
+@MappableClass()
+class SInexactReal extends SInexact with SInexactRealMappable {
+  final double value;
 
-  SInexactReal(super.radix, this.value);
+  const SInexactReal(super.radix, this.value);
 
   @override
   SInexactComplex toComplex() =>
       SInexactComplex(radix, this, SInexactReal(radix, 0.0));
 
   @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) return true;
-
-    return other is SInexactReal && value == other.value;
-  }
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+          other is SInexactReal && runtimeType == other.runtimeType &&
+              (value.isNaN && value.isNaN ||
+              value == other.value);
 
   @override
   int get hashCode => value.hashCode;
+
+
 }
 
-class SExactComplex extends SExact {
-  SExactReal real;
-  SExactReal imag;
+@MappableClass()
+class SExactComplex extends SExact with SExactComplexMappable {
+  final SExactReal real;
+  final SExactReal imag;
 
-  SExactComplex(super.radix, this.real, this.imag);
+  const SExactComplex(super.radix, this.real, this.imag);
 
   @override
   SExactComplex toComplex() => this;
-
-  @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) {
-      return true;
-    }
-
-    return other is SExactComplex && real == other.real && imag == other.imag;
-  }
-
-  @override
-  int get hashCode => Object.hash(real, imag);
 }
 
-class SInexactComplex extends SInexact {
-  SInexactReal real;
-  SInexactReal imag;
+@MappableClass()
+class SInexactComplex extends SInexact with SInexactComplexMappable {
+  final SInexactReal real;
+  final SInexactReal imag;
 
   SInexactComplex(super.radix, this.real, this.imag);
 
@@ -219,14 +243,27 @@ class SInexactComplex extends SInexact {
   SInexactComplex toComplex() => this;
 
   @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) {
-      return true;
-    }
-
-    return other is SInexactComplex && real == other.real && imag == other.imag;
-  }
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+          other is SInexactComplex && runtimeType == other.runtimeType &&
+              real == other.real && imag == other.imag;
 
   @override
   int get hashCode => Object.hash(real, imag);
+
+}
+
+/// Tag for exact or inexact numbers
+enum Exactness {
+  /// an exact number
+  exact("#e"),
+  /// an inexact number
+  inexact("#i");
+
+  final String prefix;
+
+  Parser<(String, Exactness)> exactnessParser() =>
+    string(prefix, ignoreCase: true).map((s) => (s, this));
+
+  const Exactness(this.prefix);
 }

@@ -1,54 +1,105 @@
+import "dart:math";
+
+import "package:collection/collection.dart";
+import "package:dart_mappable/dart_mappable.dart";
+import "package:dart_scheme/dart_scheme/unparsed_numbers.dart";
 import "package:petitparser/petitparser.dart";
 
-/// Tag for exact or inexact numbers
-enum Exactness {
-  /// an exact number
-  exact,
-  /// an inexact number
-  inexact
-}
+part "ast.mapper.dart";
 
 /// A Scheme abstract syntax tree
-abstract class SExpr<T> {
-  /// the semantic value of the AST
-  final T value;
+@MappableClass()
+abstract class SExpr<T> with SExprMappable<T> {
   /// a token containing the string and start and stop information
-  final Token<String> token;
+  final Token<T>? token;
+
   /// the type of the AST
   final SExprType type;
 
   /// constructor
-  SExpr(this.value, this.token, this.type);
+  SExpr(this.token, this.type);
+
+  T? get value => token?.value;
+  String? get input => token?.input;
+  int? get start => token?.start;
+  int? get stop => token?.stop;
+  String? get buffer => token?.buffer;
 }
 
 /// AST for primitives: booleans, characters, strings, numbers
-class Atom<T> extends SExpr<T> {
+@MappableClass()
+class Atom<T> extends SExpr<T> with AtomMappable<T> {
   /// constructor
-  Atom(super.value, super.token, super.type);
+  Atom(super.token, super.type);
 }
 
-/// AST for non-atomic values, pairs and (proper) lists
-class Pair<T1, T2> extends SExpr<(SExpr<T1>, SExpr<T2>)> {
-  /// constructor
-  Pair(SExpr<T1> car, SExpr<T2> cdr, Token<String> token)
-    : super((car, cdr), token, SExprType.pair);
+class SList<T> {
+  final List<T> _list;
+  final ListEquality<T> _listEq = ListEquality<T>();
 
-  /// the first value in the pair
-  T1 get car => value.$1.value;
-  /// the second value in the pain
-  T2 get cdr => value.$2.value;
+  SList(this._list);
+
+  @override
+  String toString() => "SList($_list)";
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SList<T> &&
+          runtimeType == other.runtimeType &&
+          _listEq.equals(_list, other._list);
+
+  @override
+  int get hashCode => _list.hashCode;
 }
+
+@MappableClass()
+class Pair<T1, T2> extends SExpr<(T1, T2)> with PairMappable<T1, T2> {
+  SExpr<T1> car;
+  SExpr<T2> cdr;
+
+  Pair._(this.car, this.cdr, super.token, super.type);
+
+  factory Pair(SExpr<T1> car, SExpr<T2> cdr) {
+    final Token<(T1, T2)> pairToken = Token(
+      (car.value!, cdr.value!),
+      car.buffer!,
+      car.start!,
+      cdr.stop!,
+    );
+    return Pair._(car, cdr, pairToken, SExprType.pair);
+  }
+}
+
+class Nil extends SExpr<SList<dynamic>> with NilMappable {
+  Nil(Token<SList<dynamic>>? token) : super(token, SExprType.nil);
+}
+
+
 
 /// Types of Scheme ASTs
 enum SExprType {
+  /// symbol
+  symbol,
+
   /// boolean
   boolean,
+
   /// string
   string,
+
   /// number
   number,
+
   /// character
   char,
+
+  /// byteVector
+  byteVector,
+
+  /// nil
+  nil,
+
   /// pair
-  pair
+  pair,
 }

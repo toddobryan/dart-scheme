@@ -1,17 +1,39 @@
-// Parts of numeric values in (mostly) String form, before they've
-// been parsed. Depending on prefix, could end up as exact or inexact numbers
-
+import "package:dart_mappable/dart_mappable.dart";
 import "package:dart_scheme/dart_scheme/parser.dart";
 
-/// A partial representation of a Scheme number as it's being parsed
-abstract class NumString {
-  /// the original String from which this NumString was parsed
-  String input;
+import "numbers.dart";
 
-  /// radix
+part "unparsed_numbers.mapper.dart";
+
+/// Parts of numeric values in (mostly) String form, before they've
+/// been parsed. Depending on prefix, could end up as exact or inexact numbers
+
+/// Representation for a numeric prefix, such as "#e#b" for exact binary
+@MappableClass()
+class Prefix with PrefixMappable {
+  final String input;
+  final Radix radix;
+  final Exactness exactness;
+
+  Prefix(this.input, this.radix, this.exactness);
+}
+
+/// A prefix and a NumString following it
+@MappableClass()
+class PrefixedNumString with PrefixedNumStringMappable {
+  final Prefix prefix;
+  final NumString numString;
+
+  PrefixedNumString(this.prefix, this.numString);
+
+  String get input => "${prefix.input}${numString.input}";
+}
+
+/// A partial representation of a Scheme number as it's being parsed
+sealed class NumString {
+  String input;
   Radix radix;
 
-  /// constructor
   NumString(this.input, this.radix);
 
   /// negates this NumString, usually by just adding "-" in the appropriate spot
@@ -21,16 +43,15 @@ abstract class NumString {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is NumString &&
-          runtimeType == other.runtimeType &&
-          input == other.input &&
-          radix == other.radix;
+          other is NumString && runtimeType == other.runtimeType &&
+              input == other.input && radix == other.radix;
 
   @override
   int get hashCode => Object.hash(input, radix);
 }
 
-class Suffix {
+@MappableClass()
+class Suffix with SuffixMappable {
   String input;
 
   Suffix(this.input);
@@ -42,58 +63,36 @@ class Suffix {
         : withoutE;
     return int.parse(stripPlus);
   }
+}
 
-  @override
-  String toString() => "Suffix($input)";
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is Suffix &&
-          runtimeType == other.runtimeType &&
-          input == other.input;
-
-  @override
-  int get hashCode => input.hashCode;
+sealed class RealString extends ComplexString {
+  RealString(super.input, super.radix);
 }
 
 /// A number of the form <beforeDot>.<afterDot>(E<exponent>)?
-class WithRadixPoint extends NumString {
-  /// The part before the radix point
-  final String beforeDot;
+@MappableClass()
+class WithRadixPoint extends RealString with WithRadixPointMappable {
+  String beforeDot;
+  String? afterDot;
+  Suffix suffix;
 
-  /// The part after the radix point, null if there is no radix point
-  final String? afterDot;
-
-  /// The integer representing the exponent, will be zero if absent
-  final Suffix suffix;
-
-  WithRadixPoint._(
-    super.input,
-    super.radix,
-    this.beforeDot,
-    this.afterDot,
-    this.suffix,
-  );
+  WithRadixPoint._(super.input, super.radix, this.beforeDot, this.afterDot, this.suffix);
 
   /// Constructor
   factory WithRadixPoint(String beforeDot, String? afterDot, Suffix suffix) =>
       WithRadixPoint._(
-        "$beforeDot.$afterDot$suffix",
+        "$beforeDot${_dotPlusAfterDot(afterDot)}${suffix.input}",
         Radix.dec,
         beforeDot,
         afterDot,
         suffix,
       );
 
-  /// as a "canonical" decimal string
-  String asDecimalString() => "$beforeDot$_dotPlusAfterDot${suffix.input}";
-
-  String get _dotPlusAfterDot {
-    if (afterDot == null) {
+  static String _dotPlusAfterDot(String? ad) {
+    if (ad == null) {
       return "";
     } else {
-      return ".$afterDot";
+      return ".$ad";
     }
   }
 
@@ -102,7 +101,7 @@ class WithRadixPoint extends NumString {
   WithRadixPoint negate() => WithRadixPoint("-$beforeDot", afterDot, suffix);
 
   /// Converts the String to a double
-  double toDouble() => double.parse(asDecimalString());
+  double toDouble() => double.parse(input);
 
   /// Returns the numerator and denominator of this WithRadixString as a
   /// reduceds fraction
@@ -118,8 +117,8 @@ class WithRadixPoint extends NumString {
       final (String, String) bad = withZeroExponent();
       final String bd = bad.$1;
       final String ad = bad.$2.replaceAll("0+\$", "");
-      BigInt numerator = BigInt.parse(bd + ad);
-      BigInt denominator = BigInt.from(10).pow(ad.length);
+      final BigInt numerator = BigInt.parse(bd + ad);
+      final BigInt denominator = BigInt.from(10).pow(ad.length);
       return (numerator, denominator);
     }
   }
@@ -142,9 +141,12 @@ class WithRadixPoint extends NumString {
       }
     } else if (exp > 0) {
       // move right
-      String nonNullAfterDot = afterDot ?? "";
+      final String nonNullAfterDot = afterDot ?? "";
       if (nonNullAfterDot.length < expAbs) {
-        bd = beforeDot + nonNullAfterDot + ("0" * (expAbs - nonNullAfterDot.length));
+        bd =
+            beforeDot +
+            nonNullAfterDot +
+            ("0" * (expAbs - nonNullAfterDot.length));
         ad = "";
       } else {
         bd = beforeDot + nonNullAfterDot.substring(0, expAbs);
@@ -156,26 +158,23 @@ class WithRadixPoint extends NumString {
     }
     return (bd, ad);
   }
-  @override
-  String toString() =>
-      "WithRadixPoint($beforeDot, a$afterDot, $suffix)";
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      super == other &&
-          other is WithRadixPoint &&
-          runtimeType == other.runtimeType &&
-          beforeDot == other.beforeDot &&
-          afterDot == other.afterDot &&
-          suffix == other.suffix;
+          super == other && other is WithRadixPoint &&
+              runtimeType == other.runtimeType &&
+              beforeDot == other.beforeDot &&
+              afterDot == other.afterDot &&
+              suffix == other.suffix;
 
   @override
   int get hashCode => Object.hash(super.hashCode, beforeDot, afterDot, suffix);
 }
 
 /// Wrapper class for Inf and NaN values
-class WeirdNum extends NumString {
+@MappableClass()
+class WeirdNum extends RealString with WeirdNumMappable {
   /// This WeirdNum's double value, either double.
   /// infinity, negativeInfinity, or nan
   double value;
@@ -184,7 +183,7 @@ class WeirdNum extends NumString {
 
   /// constructor
   factory WeirdNum(String input, double value) =>
-      WeirdNum._(input, Radix.infNan, value);
+      WeirdNum._(input, Radix.dec, value);
 
   @override
   WeirdNum negate() {
@@ -192,23 +191,18 @@ class WeirdNum extends NumString {
   }
 
   @override
-  String toString() => "WeirdNum($input, $value)";
-
-  @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      super == other &&
-          other is WeirdNum &&
-          runtimeType == other.runtimeType &&
-          (value.isNaN && other.value.isNaN ||
-          value == other.value);
+          other is WeirdNum && runtimeType == other.runtimeType &&
+              (value.isNaN && other.value.isNaN || value == other.value);
 
   @override
-  int get hashCode => Object.hash(super.hashCode, value);
+  int get hashCode => value.hashCode;
 }
 
 /// Represents an integer in a given base
-class IntString extends NumString {
+@MappableClass()
+class IntString extends RealString with IntStringMappable {
   /// digits understood (may be "0" in, e.g., "+i")
   String digits;
 
@@ -217,108 +211,89 @@ class IntString extends NumString {
 
   @override
   IntString negate() => IntString("-$input", radix, "-$digits");
-
-  @override
-  String toString() => "IntString($input, $radix, $digits)";
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      super == other &&
-          other is IntString &&
-          runtimeType == other.runtimeType &&
-          digits == other.digits;
-
-  @override
-  int get hashCode => Object.hash(super.hashCode, digits);
 }
 
 /// Represents a rational number
-class FracString extends NumString {
-  /// numerator
+@MappableClass()
+class FracString extends RealString with FracStringMappable {
   final String numerator;
-
-  /// denominator
   final String denominator;
 
   FracString._(super.input, super.radix, this.numerator, this.denominator);
 
   /// constructor
-  factory FracString(Radix r, String numerator, String denominator) =>
-      FracString._("$numerator/$denominator", r, numerator, denominator);
+  factory FracString(Radix radix, String numerator, String denominator) =>
+      FracString._("$numerator/$denominator", radix, numerator, denominator);
 
   @override
   FracString negate() => FracString(radix, "-$numerator", denominator);
 
   @override
-  String toString() =>
-      "FracString($radix, $numerator, $denominator)";
+  String toString() => "FracString($radix, $numerator, $denominator)";
+}
 
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      super == other &&
-          other is FracString &&
-          runtimeType == other.runtimeType &&
-          numerator == other.numerator &&
-          denominator == other.denominator;
-
-  @override
-  int get hashCode => Object.hash(super.hashCode, numerator, denominator);
+sealed class ComplexString extends NumString {
+  ComplexString(super.input, super.radix);
 }
 
 /// Represents a complex number, note that radixes should match unless
 /// one or more of real and imag is Inf or NaN.
-class ComplexString extends NumString {
+@MappableClass()
+class CartesianComplexString extends ComplexString with CartesianComplexStringMappable {
   /// real part
-  final NumString real;
+  final RealString real;
 
   /// imaginary part
-  final NumString imag;
+  final RealString imag;
 
   /// constructor
-  ComplexString._(super.input, super.radix, this.real, this.imag);
+  CartesianComplexString._(super.input, super.radix, this.real, this.imag);
 
   /// constructor that reads radix from the real and imag parts
-  factory ComplexString(String input, NumString real, NumString imag) {
-    Radix radix = real.radix == Radix.infNan ? imag.radix : real.radix;
-    return ComplexString._(input, radix, real, imag);
+  factory CartesianComplexString(String input,
+      RealString real,
+      RealString imag,) {
+    final Radix radix = real.radix == imag.radix
+        ? real.radix
+        : (real is WeirdNum ? imag.radix : real.radix);
+    return CartesianComplexString._(input, radix, real, imag);
   }
-
-  @override
-  ComplexString negate() {
-    throw UnimplementedError("shouldn't have to negate complex number");
-  }
-
-  @override
-  String toString() => "ComplexString($input, $real, $imag)";
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      super == other &&
-          other is ComplexString &&
-          runtimeType == other.runtimeType &&
-          real == other.real &&
-          imag == other.imag;
+          other is CartesianComplexString && runtimeType == other.runtimeType &&
+              real == other.real && imag == other.imag;
 
   @override
-  int get hashCode => Object.hash(super.hashCode, real, imag);
+  int get hashCode => Object.hash(real, imag);
+
+  @override
+  CartesianComplexString negate() {
+    throw UnimplementedError("shouldn't have to negate complex number");
+  }
 }
 
 /// A complex number in the form radius@thetai
-class PolarComplexString extends NumString {
+@MappableClass()
+class PolarComplexString extends ComplexString with PolarComplexStringMappable {
   /// magnitude of the represented complex number
-  final NumString radius;
+  final RealString radius;
 
   /// angle of the represented complex number
-  final NumString theta;
+  final RealString theta;
 
   PolarComplexString._(super.input, super.radix, this.radius, this.theta);
 
   /// constructor that reads the radix from the radius or theta
-  factory PolarComplexString(String input, NumString radius, NumString theta) {
-    Radix radix = radius.radix == Radix.infNan ? theta.radix : radius.radix;
+  factory PolarComplexString(
+    String input,
+    RealString radius,
+    RealString theta,
+  ) {
+    final Radix radix = radius.radix == theta.radix
+        ? theta.radix
+        : (radius.radix is WeirdNum ? theta.radix : radius.radix);
     return PolarComplexString._(input, radix, radius, theta);
   }
 
@@ -326,7 +301,6 @@ class PolarComplexString extends NumString {
   PolarComplexString negate() {
     throw UnimplementedError("shouldn't have to negate complex number");
   }
-
 
   @override
   String toString() => "PolarComplexString($input, $radius, $theta)";
@@ -337,6 +311,8 @@ class PolarComplexString extends NumString {
       super == other &&
           other is PolarComplexString &&
           runtimeType == other.runtimeType &&
+          input == other.input &&
+          radix == other.radix &&
           radius == other.radius &&
           theta == other.theta;
 
@@ -366,7 +342,7 @@ IntString one(Radix radix, String input) => IntString(input, radix, "1");
 IntString negOne(Radix radix, String input) => IntString(input, radix, "-1");
 
 /// convenience method for WithRadixPoint
-WithRadixPoint decPoint(String before, String after, String exponent) =>
+WithRadixPoint decPoint(String before, String? after, String exponent) =>
     WithRadixPoint(before, after, Suffix(exponent));
 
 /// convenience method for FractionString in binary
@@ -394,5 +370,8 @@ WeirdNum negInf(String input) => WeirdNum(input, double.negativeInfinity);
 /// convenience method for WeirdNum constructor for NaN
 WeirdNum nan(String input) => WeirdNum(input, double.nan);
 
-ComplexString comp(String input, NumString real, NumString imag) =>
-    ComplexString(input, real, imag);
+CartesianComplexString comp(String input, RealString real, RealString imag) =>
+    CartesianComplexString(input, real, imag);
+
+PolarComplexString polar(RealString radius, RealString theta) =>
+    PolarComplexString("${radius.input}@${theta.input}", radius, theta);

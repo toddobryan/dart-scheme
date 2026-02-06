@@ -1,4 +1,6 @@
 import "package:checks/checks.dart";
+import "package:dart_scheme/dart_scheme/ast.dart";
+import "package:dart_scheme/dart_scheme/numbers.dart";
 import "package:dart_scheme/dart_scheme/parser.dart";
 import "package:dart_scheme/dart_scheme/unparsed_numbers.dart";
 import "package:dartcheck/gen.dart";
@@ -10,7 +12,7 @@ import "generators.dart" as scheme_gen;
 import "result_checks_helpers.dart";
 
 void main() {
-  SchemeGrammar g = SchemeGrammar();
+  final SchemeGrammar g = SchemeGrammar();
 
   final Map<(Radix, Parser Function(Radix)), Parser> memoTable = {};
 
@@ -21,12 +23,72 @@ void main() {
     return memoTable[(r, parserGetter)] as Parser<T>;
   }
 
+  group("parsing numbers", () {
+    final Parser<SExpr<SNumber>> p = g.buildFrom(g.number()).end();
+
+    forAll(scheme_gen.radixes.flatMap(scheme_gen.prefixedNumStrings))
+        .test("all kinds of numbers", (PrefixedNumString pns) {
+          check(
+              p.parse(pns.input),
+          ).succeeds(
+              pns.input,
+              SExprType.number,
+              SNumber.make(pns),
+              0,
+              pns.input.length
+          );
+    });
+
+  });
+
+  group("testing NumStrings with generators", () {
+    final Gen<(Radix, IntString)> uints = scheme_gen.radixes.flatMap(
+      (Radix r) => scheme_gen.uinteger(r).map((IntString n) => (r, n)),
+    );
+
+    forAll(uints).test("unsigned integers", ((Radix, IntString) rn) {
+      check(
+        getParser(rn.$1, g.uinteger).parse(rn.$2.input),
+      ).succeeds(rn.$2, rn.$2.input.length);
+    });
+
+    final Gen<(Radix, FracString)> ufracs = scheme_gen.radixes.flatMap(
+      (Radix r) => scheme_gen.ufrac(r).map((FracString n) => (r, n)),
+    );
+
+    forAll(ufracs).test("unsigned fractions", ((Radix, FracString) rf) {
+      check(
+        getParser(rf.$1, g.ufrac).parse(rf.$2.input),
+      ).succeeds(rf.$2, rf.$2.input.length);
+    });
+
+    final Gen<ComplexString> complexNumbers =
+        scheme_gen.radixes.flatMap((r) =>
+            scheme_gen.prefixes(r).flatMap((p) =>
+                scheme_gen.complex(r, p.exactness)));
+
+    forAll(complexNumbers).test("complex numbers parse", (ComplexString cs) {
+      check(
+        getParser(cs.radix, g.complex).parse(cs.input),
+      ).succeeds(cs, cs.input.length);
+    });
+
+    forAll(scheme_gen.radixes.flatMap(scheme_gen.prefixes)).test(
+      "prefixes parse",
+      (Prefix p) {
+        check(
+          getParser(p.radix, g.prefix).parse(p.input),
+        ).succeeds(p, p.input.length);
+      },
+    );
+  });
+
   group("parsing parts of numbers", () {
     test("digits", () {
-      Parser<String> p2 = g.buildFrom(g.digit(Radix.bin).end());
-      Parser<String> p8 = g.buildFrom(g.digit(Radix.oct).end());
-      Parser<String> p10 = g.buildFrom(g.digit(Radix.dec).end());
-      Parser<String> p16 = g.buildFrom(g.digit(Radix.hex).end());
+      final Parser<String> p2 = g.buildFrom(g.digit(Radix.bin).end());
+      final Parser<String> p8 = g.buildFrom(g.digit(Radix.oct).end());
+      final Parser<String> p10 = g.buildFrom(g.digit(Radix.dec).end());
+      final Parser<String> p16 = g.buildFrom(g.digit(Radix.hex).end());
 
       check(p2.parse("0")).succeeds("0", 1);
       check(p2.parse("1")).succeeds("1", 1);
@@ -80,10 +142,10 @@ void main() {
     });
 
     test("unsigned integers", () {
-      Parser<IntString> p2 = getParser(Radix.bin, g.uinteger);
-      Parser<IntString> p8 = getParser(Radix.oct, g.uinteger);
-      Parser<IntString> p10 = getParser(Radix.dec, g.uinteger);
-      Parser<IntString> p16 = getParser(Radix.hex, g.uinteger);
+      final Parser<IntString> p2 = getParser(Radix.bin, g.uinteger);
+      final Parser<IntString> p8 = getParser(Radix.oct, g.uinteger);
+      final Parser<IntString> p10 = getParser(Radix.dec, g.uinteger);
+      final Parser<IntString> p16 = getParser(Radix.hex, g.uinteger);
 
       check(
         p2.parse("1010010001110101010"),
@@ -159,11 +221,11 @@ void main() {
     // R7RS only allows base-10 decimals. Need to decide if we want to allow
     // other bases.
     test("unsigned decimals", () {
-      Parser<WithRadixPoint> p = g.buildFrom(g.decimal(Radix.dec).end());
+      final Parser<WithRadixPoint> p = g.buildFrom(g.decimal(Radix.dec).end());
 
-      check(p.parse("0.")).succeeds(decPoint("0", "", ""), 2);
+      check(p.parse("0.")).succeeds(decPoint("0", null, ""), 2);
       check(p.parse(".0")).succeeds(decPoint("", "0", ""), 2);
-      check(p.parse("0.e17")).succeeds(decPoint("0", "", "e17"), 5);
+      check(p.parse("0.e17")).succeeds(decPoint("0", null, "e17"), 5);
       check(p.parse("3.14159")).succeeds(decPoint("3", "14159", ""), 7);
       check(p.parse("6.023E23")).succeeds(decPoint("6", "023", "E23"), 8);
       check(
@@ -173,10 +235,10 @@ void main() {
     });
 
     test("ureal", () {
-      Parser<NumString> p2 = getParser(Radix.bin, g.ureal);
-      Parser<NumString> p8 = getParser(Radix.oct, g.ureal);
-      Parser<NumString> p10 = getParser(Radix.dec, g.ureal);
-      Parser<NumString> p16 = getParser(Radix.hex, g.ureal);
+      final Parser<NumString> p2 = getParser(Radix.bin, g.ureal);
+      final Parser<NumString> p8 = getParser(Radix.oct, g.ureal);
+      final Parser<NumString> p10 = getParser(Radix.dec, g.ureal);
+      final Parser<NumString> p16 = getParser(Radix.hex, g.ureal);
 
       check(p2.parse("101")).succeeds(binInt("101"), 3);
       check(p2.parse("11/100")).succeeds(binFrac("11", "100"), 6);
@@ -186,16 +248,16 @@ void main() {
       check(p16.parse("ff/10e")).succeeds(hexFrac("ff", "10e"), 6);
 
       check(p10.parse("321")).succeeds(decInt("321"), 3);
-      check(p10.parse("321E+7")).succeeds(decPoint("321", "", "E+7"), 6);
+      check(p10.parse("321E+7")).succeeds(decPoint("321", null, "E+7"), 6);
       check(p10.parse("3.21E-3")).succeeds(decPoint("3", "21", "E-3"), 7);
       check(p10.parse(".321E128")).succeeds(decPoint("", "321", "E128"), 8);
     });
 
     test("real", () {
-      Parser<NumString> p2 = getParser(Radix.bin, g.real);
-      Parser<NumString> p8 = getParser(Radix.oct, g.real);
-      Parser<NumString> p10 = getParser(Radix.dec, g.real);
-      Parser<NumString> p16 = getParser(Radix.hex, g.real);
+      final Parser<NumString> p2 = getParser(Radix.bin, g.real);
+      final Parser<NumString> p8 = getParser(Radix.oct, g.real);
+      final Parser<NumString> p10 = getParser(Radix.dec, g.real);
+      final Parser<NumString> p16 = getParser(Radix.hex, g.real);
 
       check(p2.parse("-101")).succeeds(binInt("-101"), 4);
       check(p2.parse("-11/100")).succeeds(binFrac("-11", "100"), 7);
@@ -212,7 +274,7 @@ void main() {
       check(p16.parse("+ff/10e")).succeeds(hexFrac("ff", "10e"), 7);
 
       check(p10.parse("-321")).succeeds(decInt("-321"), 4);
-      check(p10.parse("-321E+7")).succeeds(decPoint("-321", "", "E+7"), 7);
+      check(p10.parse("-321E+7")).succeeds(decPoint("-321", null, "E+7"), 7);
       check(p10.parse("+3.21E-3")).succeeds(decPoint("3", "21", "E-3"), 8);
       check(p10.parse(".321e128")).succeeds(decPoint("", "321", "e128"), 8);
       check(p10.parse("22/7")).succeeds(decFrac("22", "7"), 4);
@@ -220,11 +282,11 @@ void main() {
     });
 
     test("real numbers parsed by complex rule", () {
-      Parser<NumString> p2 = getParser(Radix.bin, g.complex);
-      Parser<NumString> p8 = getParser(Radix.oct, g.complex);
-      Parser<NumString> p10 = getParser(Radix.dec, g.complex);
-      Parser<NumString> p16 = getParser(Radix.hex, g.complex);
-      
+      final Parser<NumString> p2 = getParser(Radix.bin, g.complex);
+      final Parser<NumString> p8 = getParser(Radix.oct, g.complex);
+      final Parser<NumString> p10 = getParser(Radix.dec, g.complex);
+      final Parser<NumString> p16 = getParser(Radix.hex, g.complex);
+
       // Repeat parsers for real
       check(p2.parse("-101")).succeeds(binInt("-101"), 4);
       check(p2.parse("-11/100")).succeeds(binFrac("-11", "100"), 7);
@@ -241,7 +303,7 @@ void main() {
       check(p16.parse("+ff/10e")).succeeds(hexFrac("ff", "10e"), 7);
 
       check(p10.parse("-321")).succeeds(decInt("-321"), 4);
-      check(p10.parse("-321E+7")).succeeds(decPoint("-321", "", "E+7"), 7);
+      check(p10.parse("-321E+7")).succeeds(decPoint("-321", null, "E+7"), 7);
       check(p10.parse("+3.21E-3")).succeeds(decPoint("3", "21", "E-3"), 8);
       check(p10.parse(".321e128")).succeeds(decPoint("", "321", "e128"), 8);
       check(p10.parse("22/7")).succeeds(decFrac("22", "7"), 4);
@@ -255,33 +317,62 @@ void main() {
     });
 
     test("+/- i and infnan i", () {
-      Parser<NumString> p2 = getParser(Radix.bin, g.complex);
-      Parser<NumString> p8 = getParser(Radix.oct, g.complex);
-      Parser<NumString> p10 = getParser(Radix.dec, g.complex);
-      Parser<NumString> p16 = getParser(Radix.hex, g.complex);
-      
-      check(p2.parse("+i")).succeeds(comp("+i", zero(Radix.bin, ""), one(Radix.bin, "")), 2);
-      check(p2.parse("-I")).succeeds(comp("-I", zero(Radix.bin, ""), negOne(Radix.bin, "")), 2);
-      check(p2.parse("+INF.0i")).succeeds(comp("+INF.0i", zero(Radix.bin, ""), inf("+INF.0")), 7);
-      check(p2.parse("-nan.0i")).succeeds(comp("-nan.0i", zero(Radix.bin, ""), nan("-nan.0")), 7);
+      final Parser<NumString> p2 = getParser(Radix.bin, g.complex);
+      final Parser<NumString> p8 = getParser(Radix.oct, g.complex);
+      final Parser<NumString> p10 = getParser(Radix.dec, g.complex);
+      final Parser<NumString> p16 = getParser(Radix.hex, g.complex);
 
-      check(p8.parse("+I")).succeeds(comp("+I", zero(Radix.oct, ""), one(Radix.oct, "")), 2);
-      check(p8.parse("-i")).succeeds(comp("-i", zero(Radix.oct, ""), negOne(Radix.oct, "")), 2);
-      check(p8.parse("-Inf.0i")).succeeds(comp("-Inf.0i", zero(Radix.oct, ""), negInf("-Inf.0")), 7);
-      check(p8.parse("+NAN.0i")).succeeds(comp("+NAN.0i", zero(Radix.oct, ""), nan("+NAN.0")), 7);
+      check(
+        p2.parse("+i"),
+      ).succeeds(comp("+i", zero(Radix.bin, ""), one(Radix.bin, "")), 2);
+      check(
+        p2.parse("-I"),
+      ).succeeds(comp("-I", zero(Radix.bin, ""), negOne(Radix.bin, "")), 2);
+      check(
+        p2.parse("+INF.0i"),
+      ).succeeds(comp("+INF.0i", zero(Radix.bin, ""), inf("+INF.0")), 7);
+      check(
+        p2.parse("-nan.0i"),
+      ).succeeds(comp("-nan.0i", zero(Radix.bin, ""), nan("-nan.0")), 7);
 
-      check(p10.parse("+I")).succeeds(comp("+I", zero(Radix.dec, ""), one(Radix.dec, "")), 2);
-      check(p10.parse("-i")).succeeds(comp("-i", zero(Radix.dec, ""), negOne(Radix.dec, "")), 2);
-      check(p10.parse("+inf.0i")).succeeds(comp("+inf.0i", zero(Radix.dec, ""), inf("+inf.0")), 7);
-      check(p10.parse("-NAN.0i")).succeeds(comp("-NAN.0i", zero(Radix.dec, ""), nan("-NAN.0")), 7);
+      check(
+        p8.parse("+I"),
+      ).succeeds(comp("+I", zero(Radix.oct, ""), one(Radix.oct, "")), 2);
+      check(
+        p8.parse("-i"),
+      ).succeeds(comp("-i", zero(Radix.oct, ""), negOne(Radix.oct, "")), 2);
+      check(
+        p8.parse("-Inf.0i"),
+      ).succeeds(comp("-Inf.0i", zero(Radix.oct, ""), negInf("-Inf.0")), 7);
+      check(
+        p8.parse("+NAN.0i"),
+      ).succeeds(comp("+NAN.0i", zero(Radix.oct, ""), nan("+NAN.0")), 7);
 
-      check(p16.parse("+I")).succeeds(comp("+I", zero(Radix.hex, ""), one(Radix.hex, "")), 2);
-      check(p16.parse("-i")).succeeds(comp("-i", zero(Radix.hex, ""), negOne(Radix.hex, "")), 2);
-      check(p16.parse("+inf.0i")).succeeds(comp("+inf.0i", zero(Radix.hex, ""), inf("+inf.0")), 7);
-      check(p16.parse("-NAN.0i")).succeeds(comp("-NAN.0i", zero(Radix.hex, ""), nan("-NAN.0")), 7);
-    });
+      check(
+        p10.parse("+I"),
+      ).succeeds(comp("+I", zero(Radix.dec, ""), one(Radix.dec, "")), 2);
+      check(
+        p10.parse("-i"),
+      ).succeeds(comp("-i", zero(Radix.dec, ""), negOne(Radix.dec, "")), 2);
+      check(
+        p10.parse("+inf.0i"),
+      ).succeeds(comp("+inf.0i", zero(Radix.dec, ""), inf("+inf.0")), 7);
+      check(
+        p10.parse("-NAN.0i"),
+      ).succeeds(comp("-NAN.0i", zero(Radix.dec, ""), nan("-NAN.0")), 7);
 
-    test("+ri and -ri", () {
+      check(
+        p16.parse("+I"),
+      ).succeeds(comp("+I", zero(Radix.hex, ""), one(Radix.hex, "")), 2);
+      check(
+        p16.parse("-i"),
+      ).succeeds(comp("-i", zero(Radix.hex, ""), negOne(Radix.hex, "")), 2);
+      check(
+        p16.parse("+inf.0i"),
+      ).succeeds(comp("+inf.0i", zero(Radix.hex, ""), inf("+inf.0")), 7);
+      check(
+        p16.parse("-NAN.0i"),
+      ).succeeds(comp("-NAN.0i", zero(Radix.hex, ""), nan("-NAN.0")), 7);
     });
   });
 }

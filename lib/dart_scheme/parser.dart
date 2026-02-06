@@ -3,6 +3,8 @@ import "package:dart_scheme/dart_scheme/error_messages.dart" as err;
 import "package:dart_scheme/dart_scheme/unparsed_numbers.dart";
 import "package:petitparser/petitparser.dart";
 
+import "numbers.dart";
+
 /// map that ignores its argument
 extension MapToParser<T1> on Parser<T1> {
   Parser<T2> mapTo<T2>(T2 t2) => map((T1 t1) => t2);
@@ -18,6 +20,7 @@ class SchemeGrammar extends GrammarDefinition {
      use null? or empty?
      use '() or empty
      keep numbers in radix or not
+     display bytevector as #u8(...) or (bytevector ...)
   */
 
   /*  Parser<T1> ps1<T1>(Parser<T1> p1) =>
@@ -37,9 +40,9 @@ class SchemeGrammar extends GrammarDefinition {
   ).map5((_, t1, t2, t3, _) => (t1, t2, t3));
 */
 
-  /// start production for the Scheme grammar
+  /// start production for the Scheme grammar, dummy value for now
   @override
-  Parser start() => string("scheme"); // TODO
+  Parser<String> start() => string("scheme"); // TODO
   /*
   // 7.1.6 Programs and definitions
 
@@ -416,17 +419,17 @@ class SchemeGrammar extends GrammarDefinition {
     seq4(lParen(), string("include"), sString().plus(), rParen()),
     seq4(lParen(), string("include-ci"), sString().plus(), rParen()),
   ].toChoiceParser();
-
+*/
   // 7.1.2 External Representations
 
-  Parser datum() => [
+  Parser<SExpr<dynamic>> datum() => [
     ref0(simpleDatum),
     ref0(compoundDatum),
     seq3(label(), char("="), ref0(datum)),
     seq2(label(), char("#")),
   ].toChoiceParser();
 
-  Parser simpleDatum() => [
+  Parser<SExpr<dynamic>> simpleDatum() => [
     boolean(),
     number(),
     character(),
@@ -435,23 +438,30 @@ class SchemeGrammar extends GrammarDefinition {
     byteVector(),
   ].toChoiceParser();
 
-  Parser symbol() => identifier();
+  Parser<SExpr<String>> symbol() => identifier();
 
-  Parser compoundDatum() =>
+  Parser<SExpr<dynamic>> compoundDatum() =>
       [ref0(list), ref0(vector), ref0(abbreviation)].toChoiceParser();
 
-  Parser list() => [
-    seq3(lParen(), ref0(datum).star(), rParen()),
-    seq5(lParen(), ref0(datum).plus(), dot(), ref0(datum), rParen()),
+  SExpr<dynamic> makePair(List<SExpr<dynamic>> elts, SExpr<dynamic> last) {
+    if (elts.isEmpty) {
+      return Nil(null);
+    }
+    elts.reversed.fold(last, (prev, elt) => Pair(elt, prev));
+  }
+
+  Parser<SExpr<dynamic>> list() => [
+    seq3(lParen(), ref0(datum).star(), rParen()).token().map((t) => t.mapValue((tt) => makePair(tt.value.$2, Nil(null))),
+    seq5(lParen(), ref0(datum).plus(), dot(), ref0(datum), rParen()).token().map((t) => t.mapValue((tt) => makePair(tt.value.$2, tt.value.$4)))),
   ].toChoiceParser();
 
-  Parser abbreviation() => seq2(abbrevPrefix(), ref0(datum));
+  Parser<SExpr<dynamic>> abbreviation() => seq2(abbrevPrefix(), ref0(datum));
 
-  Parser abbrevPrefix() =>
+  Parser<String> abbrevPrefix() =>
       [quote(), backtick(), comma(), commaAt()].toChoiceParser();
 
   Parser vector() => seq3(hashParen(), ref0(datum).star(), rParen());
-  Parser label() => seq2(char("#"), uinteger(10));
+  Parser label() => seq2(char("#"), uinteger(Radix.dec));
 
   // 7.1.1 Lexical Structure
 
@@ -480,18 +490,18 @@ class SchemeGrammar extends GrammarDefinition {
     doubleQuote(),
     semicolon(),
   ].toChoiceParser();
-*/
+
   /// Whitespace allowed inside a line
   Parser<String> intralineWhitespace() => pattern(" \t");
-  /*
+
   Parser<String> sWhitespace() =>
       [intralineWhitespace(), lineEnding()].toChoiceParser();
-*/
+
   /// A legal line-ending character or characters
   Parser<String> lineEnding() =>
       // ignore: always_specify_types
       [char("\n"), string("\r\n"), char("\r")].toChoiceParser();
-  /*
+
   Parser<String> lParen() => char("(");
   Parser<String> rParen() => char(")");
   Parser<String> hashParen() => string("#(");
@@ -499,18 +509,18 @@ class SchemeGrammar extends GrammarDefinition {
   Parser<String> backtick() => char("`");
   Parser<String> comma() => char(",");
   Parser<String> commaAt() => string(",@");
-*/
+
   /// Parses a period
   Parser<String> dot() => char(".");
-  /*
+
   Parser<String> verticalLine() => char("|");
-*/
 
   /// Parses a single double-quote
   Parser<String> doubleQuote() => char('"');
-  /*
+
   Parser<String> semicolon() => char(";");
 
+  /*
   Parser<String> comment() => [
     seq2(char(";"), (lineEnding().not() & any()).star()).flatten(),
     nestedComment(),
@@ -537,28 +547,34 @@ class SchemeGrammar extends GrammarDefinition {
   Parser atmosphere() =>
       [sWhitespace(), comment(), directive()].toChoiceParser();
   Parser intertokenSpace() => ref0(atmosphere).star();
-  Parser eof() => endOfInput();
-
-  Parser identifier() => [
-    seq2(initial(), subsequent().star()),
-    seq3(verticalLine(), ref0(symbolElement).star(), verticalLine()),
-    peculiarIdentifier(),
-  ].toChoiceParser();
-
-  Parser initial() => [letter(), specialInitial()].toChoiceParser();
-  Parser specialInitial() => anyOf("!\$%*&/:<=>?@^_~");
-  Parser subsequent() =>
-      [initial(), digit10(), specialSubsequent()].toChoiceParser();
 */
+  Parser<void> eof() => endOfInput();
+
+  Parser<SExpr<String>> identifier() => [
+    seq2(initial(), subsequent().star()).flatten(),
+    seq3(
+      verticalLine(),
+      ref0(symbolElement).star().map((cs) => cs.join()),
+      verticalLine(),
+    ).map3((_, s, _) => s),
+    peculiarIdentifier().flatten(),
+  ].toChoiceParser().token().map((t) => Atom(t, SExprType.symbol));
+
+  Parser<String> initial() => [letter(), specialInitial()].toChoiceParser();
+  Parser<String> specialInitial() => anyOf("!\$%*&/:<=>?@^_~");
+  Parser<String> subsequent() =>
+      [initial(), digit10(), specialSubsequent()].toChoiceParser();
 
   /// Parses a single digit legal for a base-10 number
   Parser<String> digit10() => Radix.dec.digitParser;
 
   /// Parses a single digit legal for a base-16 number
   Parser<String> hexDigit() => Radix.hex.digitParser;
-  /*  Parser explicitSign() => anyOf("+-");
-  Parser specialSubsequent() => [explicitSign(), anyOf(".@")].toChoiceParser();
-*/
+
+  Parser<String> explicitSign() => anyOf("+-");
+  Parser<String> specialSubsequent() =>
+      [explicitSign(), anyOf(".@")].toChoiceParser();
+
   /// Parses an inline hex escape characte
   /// of the form \xH+; where H is a hex digit
   Parser<String> inlineHexEscape() => seq3(
@@ -579,8 +595,7 @@ class SchemeGrammar extends GrammarDefinition {
     string(r"\t").mapTo("\u0009"),
   ].toChoiceParser();
 
-  /*
-  Parser peculiarIdentifier() => seq2(
+  Parser<String> peculiarIdentifier() => seq2(
     seq2(
       [string("+i"), string("-i"), infnan()].toChoiceParser(),
       [delimiter(), eof()].toChoiceParser(),
@@ -591,51 +606,48 @@ class SchemeGrammar extends GrammarDefinition {
       seq4(explicitSign(), dot(), dotSubsequent(), subsequent().star()),
       seq3(dot(), dotSubsequent(), subsequent().star()),
     ].toChoiceParser(),
-  );
-  Parser dotSubsequent() => [signSubsequent(), dot()].toChoiceParser();
-  Parser signSubsequent() =>
+  ).flatten();
+  Parser<String> dotSubsequent() => [signSubsequent(), dot()].toChoiceParser();
+  Parser<String> signSubsequent() =>
       [initial(), explicitSign(), char("@")].toChoiceParser();
-  Parser symbolElement() => [
-    initial(),
+  Parser<String> symbolElement() => [
+    inlineHexEscape(),
     mnemonicEscape(),
-    char("\\"),
-    pattern("^|\\"),
+    string("\\|"),
+    noneOf("|\\"),
   ].toChoiceParser();
-*/
+
   /// Parses #t, #true, #f, and #false
   Parser<SExpr<bool>> boolean() =>
       <Parser<SExpr<bool>>>[
-        [
-          string("#true"),
-          string("#t"),
-        ].toChoiceParser().token().map((t) => Atom(true, t, SExprType.boolean)),
-        [string("#false"), string("#f")].toChoiceParser().token().map(
-          (t) => Atom(false, t, SExprType.boolean),
-        ),
+        [string("#true"), string("#t")]
+            .toChoiceParser()
+            .map((_) => true)
+            .token()
+            .map((t) => Atom(t, SExprType.boolean)),
+        [string("#false"), string("#f")]
+            .toChoiceParser()
+            .map((_) => false)
+            .token()
+            .map((t) => Atom(t, SExprType.boolean)),
       ].toChoiceParser(
         failureJoiner: (f1, _) => Failure(f1.buffer, f1.position, err.boolean),
       );
 
   /// Parses a legal Scheme character literal
   Parser<SExpr<String>> character() => [
-    seq2(string("#\\"), characterName())
-        .map2((_, c) => c)
-        .token()
-        .map((t) => Atom(t.value, t.toStringToken, SExprType.char)),
+    seq2(
+      string("#\\"),
+      characterName(),
+    ).map2((_, c) => c).token().map((t) => Atom(t, SExprType.char)),
     seq3(string("#\\x"), hexScalarValue(), char(";"))
-        .map3((_, h, _) => int.parse(h, radix: 16))
+        .map3((_, h, _) => String.fromCharCode(int.parse(h, radix: 16)))
         .token()
-        .map(
-          (t) => Atom(
-            String.fromCharCode(t.value),
-            t.toStringToken,
-            SExprType.char,
-          ),
-        ),
-    seq2(string("#\\"), any(unicode: true))
-        .map2((_, c) => c)
-        .token()
-        .map((t) => Atom(t.value, t.toStringToken, SExprType.char)),
+        .map((t) => Atom(t, SExprType.char)),
+    seq2(
+      string("#\\"),
+      any(unicode: true),
+    ).map2((_, c) => c).token().map((t) => Atom(t, SExprType.char)),
   ].toChoiceParser();
 
   /// Parses the names of named characters
@@ -652,15 +664,11 @@ class SchemeGrammar extends GrammarDefinition {
   ].toChoiceParser();
 
   /// Parses a legal Scheme string
-  Parser<SExpr<String>> sString() =>
-      seq3(
-            doubleQuote(),
-            stringElement().star().map((ss) => ss.join("")),
-            doubleQuote(),
-          )
-          .map3((_, s, _) => s)
-          .token()
-          .map((t) => Atom(t.value, t.toStringToken, SExprType.string));
+  Parser<SExpr<String>> sString() => seq3(
+    doubleQuote(),
+    stringElement().star().map((ss) => ss.join("")),
+    doubleQuote(),
+  ).map3((_, s, _) => s).token().map((t) => Atom(t, SExprType.string));
 
   Parser<String> stringElement() => [
     inlineHexEscape(),
@@ -676,90 +684,111 @@ class SchemeGrammar extends GrammarDefinition {
     string(r"\|").mapTo("|"),
     pattern(r'^"\'),
   ].toChoiceParser();
-  /*
-  Parser byteVector() => seq3(hashU8Paren(), sByte().star(), rParen());
-  Parser sByte() => failure(message: "TODO"); // integer value from 0-255
 
-  Parser<SExpr<SNumber>> number() =>
-      [sNum(2), sNum(8), sNum(10), sNum(16)]
-          .toChoiceParser()
-          .token()
-          .map((t) => Atom(t.value, t.toStringToken, SExprType.number));
+  Parser<Atom<SList<SExpr<SNumber>>>> byteVector() =>
+      seq3(hashU8Paren(), sByte().trim().star(), rParen()).token().map(
+        (t) => Atom(
+          Token(
+            SList(t.value.$2),
+            t.buffer,
+            t.start,
+            t.stop,
+          ),
+          SExprType.byteVector,
+        ),
+      );
 
-  Parser<SNumber> sNum(int r) =>
-      seq2(prefix(r), complex(r)).map2((exact, number) => SNumber.make(exact.$2, number));
-*/
+  // TODO: maybe move check for range into byteVector, since can get
+  // ")" expected if it truncates a number that is too big
+  Parser<SExpr<SNumber>> sByte() => number()
+      .where(
+        (sexp) =>
+            sexp.token!.value is SExactInteger &&
+            (sexp.token!.value as SExactInteger).value.isByte(),
+        factory: (context, success) => context.failure(
+          "Failure at [${context.toPositionString()}]: "
+          "byte-vector values must be exact integers "
+          "in the range [0, 255]",
+          context.position,
+        ),
+      );
+
+  Parser<SExpr<SNumber>> number() => [
+    sNum(Radix.bin),
+    sNum(Radix.oct),
+    sNum(Radix.dec),
+    sNum(Radix.hex),
+  ].toChoiceParser().token().map((t) => Atom(t, SExprType.number));
+
+  Parser<SNumber> sNum(Radix r) =>
+      seq2(prefix(r), complex(r)).map2(PrefixedNumString.new).map(SNumber.make);
+
   /// Parses a legal complex number into a NumString
-  Parser<NumString> complex(Radix r) => [
-    seq3(real(r), char("@"), real(r))
-        .map3((rad, _, theta) => PolarComplexString("$rad@$theta", rad, theta))
-        .labeled("rad@theta"),
-    seq4(
+  Parser<ComplexString> complex(Radix r) => <Parser<ComplexString>>[
+    // TODO: add back polar complex numbers
+    /*seq3(
       real(r),
-      char("+"),
-      ureal(r),
-      char("i", ignoreCase: true),
-    ).map4((rl, _, im, i) => ComplexString("${rl.input}+${im.input}$i", rl, im)).labeled("r+ri"),
-    seq4(
+      char("@"),
       real(r),
-      char("-"),
-      ureal(r),
-      char("i", ignoreCase: true),
-    ).map4((rl, _, im, i) => ComplexString("${rl.input}-${im.input}$i", rl, im.negate())).labeled("r-ri"),
+    ).map3((rad, _, theta) => polar(rad, theta)).labeled("rad@theta"),*/
+    seq4(real(r), char("+"), ureal(r), char("i", ignoreCase: true))
+        .map4((rl, _, im, i) => comp("${rl.input}+${im.input}$i", rl, im))
+        .labeled("r+ri"),
+    seq4(real(r), char("-"), ureal(r), char("i", ignoreCase: true))
+        .map4(
+          (rl, _, im, i) =>
+              comp("${rl.input}-${im.input}$i", rl, im.negate() as RealString),
+        )
+        .labeled("r-ri"),
+    seq3(real(r), infnan(), char("i", ignoreCase: true))
+        .map3((rl, inf, i) => comp("${rl.input}${inf.input}$i", rl, inf))
+        .labeled("r&infnani"),
     seq3(
       real(r),
       char("+"),
       char("i", ignoreCase: true),
-    ).map3((rl, _, i) => ComplexString("${rl.input}+$i", rl, IntString("", r, "1"))).labeled("r+i"),
-    seq3(
-      real(r),
-      char("-"),
-      char("i", ignoreCase: true),
-    ).map3((rl, _, i) => ComplexString("${rl.input}+$i", rl, IntString("", r, "-1"))).labeled("r-i"),
-    seq3(
-      real(r),
-      infnan(),
-      char("i", ignoreCase: true),
-    ).map3((rl, inf, i) => ComplexString("${rl.input}${inf.input}$i", rl, inf)).labeled("r-infnani"),
-    seq3(
-      char("+"),
-      ureal(r),
-      char("i", ignoreCase: true),
-    ).map3((_, im, i) => ComplexString("+${im.input}$i", IntString("", r, "0"), im)).labeled("+ri"),
+    ).map3((rl, _, i) => comp("${rl.input}+$i", rl, one(r, ""))).labeled("r+i"),
+    seq3(real(r), char("-"), char("i", ignoreCase: true))
+        .map3((rl, _, i) => comp("${rl.input}-$i", rl, negOne(r, "")))
+        .labeled("r-i"),
+    seq3(char("+"), ureal(r), char("i", ignoreCase: true))
+        .map3((_, im, i) => comp("+${im.input}$i", zero(r, ""), im))
+        .labeled("+ri"),
     seq3(char("-"), ureal(r), char("i", ignoreCase: true))
-        .map3((_, rl, i) => ComplexString("-${rl.input}$i", IntString("", r, "0"), rl.negate()))
+        .map3((_, im, i) => comp("-${im.input}$i", zero(r, ""), im))
         .labeled("-ri"),
-    seq2(
-      infnan(),
-      char("i", ignoreCase: true),
-    ).map2((wn, i) => ComplexString("${wn.input}$i", IntString("", r, "0"), wn)).labeled("infnani"),
+    seq2(infnan(), char("i", ignoreCase: true))
+        .map2((wn, i) => comp("${wn.input}$i", zero(r, ""), wn))
+        .labeled("infnani"),
     real(r),
     string(
       "+i",
       ignoreCase: true,
-    ).map((i) => ComplexString(i, IntString("", r, "0"), IntString("", r, "1"))).labeled("+i"),
+    ).map((i) => comp(i, zero(r, ""), one(r, ""))).labeled("+i"),
     string(
       "-i",
       ignoreCase: true,
-    ).map((i) => ComplexString(i, IntString("", r, "0"), IntString("", r, "-1"))).labeled("-i"),
+    ).map((i) => comp(i, zero(r, ""), negOne(r, ""))).labeled("-i"),
   ].toChoiceParser().labeled("complex");
 
   /// Parses a legal real number into a NumString
-  Parser<NumString> real(Radix r) => [
-    seq2(sign(), ureal(r)).map2((s, u) => s == "-" ? u.negate() : u),
+  Parser<RealString> real(Radix r) => [
+    seq2(
+      sign(),
+      ureal(r),
+    ).map2((s, u) => s == "-" ? u.negate() as RealString : u),
     infnan(),
   ].toChoiceParser().labeled("real");
 
   /// Parses a legal unsigned real number into a NumString
-  Parser<NumString> ureal(Radix r) => [
-    decimal(r),
-    seq3(
-      uinteger(r),
-      char("/"),
-      uinteger(r),
-    ).map3((n, _, d) => FracString(r, n.input, d.input)),
+  Parser<RealString> ureal(Radix r) =>
+      [decimal(r), ufrac(r), uinteger(r)].toChoiceParser().labeled("ureal");
+
+  Parser<FracString> ufrac(Radix r) => seq3(
     uinteger(r),
-  ].toChoiceParser().labeled("ureal");
+    char("/"),
+    uinteger(r),
+  ).map3((n, _, d) => FracString(r, n.input, d.input));
 
   /// Parses a legal number with a radix point and optional exponent
   /// Currently only handles base 10
@@ -771,9 +800,11 @@ class SchemeGrammar extends GrammarDefinition {
         seq4(
           digit10().plusString(),
           dot(),
-          digit10().starString(),
+          digit10().starString().map((String ds) => ds == "" ? null : ds),
           suffix().optional(),
-        ).map4((bef, _, aft, expt) => WithRadixPoint(bef, aft, expt ?? Suffix(""))),
+        ).map4(
+          (bef, _, aft, expt) => WithRadixPoint(bef, aft, expt ?? Suffix("")),
+        ),
         seq3(
           dot(),
           digit10().plusString(),
@@ -782,7 +813,7 @@ class SchemeGrammar extends GrammarDefinition {
         seq2(
           uinteger(Radix.dec).flatten(),
           suffix(),
-        ).map2((bi, expt) => WithRadixPoint(bi, "", expt)),
+        ).map2((bi, expt) => WithRadixPoint(bi, null, expt)),
       ].toChoiceParser().labeled("decimal");
     }
   }
@@ -790,15 +821,37 @@ class SchemeGrammar extends GrammarDefinition {
   /// Parses an unsigned integer into a NumString
   Parser<IntString> uinteger(Radix r) =>
       digit(r).plusString().map((s) => IntString(s, r, s)).labeled("uinteger");
-  /*
-  Parser<(int, Exactness)> prefix(int r) => [
-    seq2(radix(r), exactness()).map2((r, e) => (r, e)),
-    seq2(exactness(), radix(r)).map2((e, r) => (r, e)),
-    exactness().map((e) => (10, e)),
-    radix(r).map((r) => (r, Exactness.exact)),
-    epsilonWith((10, Exactness.exact)),
-  ].toChoiceParser();
-*/
+
+  Parser<Prefix> prefix(Radix r) {
+    if (r != Radix.dec) {
+      return [
+        seq2(
+          radix(r),
+          exactness(),
+        ).map2((rd, e) => Prefix("${rd.$1}${e.$1}", rd.$2, e.$2)),
+        seq2(
+          exactness(),
+          radix(r),
+        ).map2((e, rd) => Prefix("${e.$1}${rd.$1}", rd.$2, e.$2)),
+        radix(r).map((rd) => Prefix("${rd.$1}", rd.$2, Exactness.exact)),
+      ].toChoiceParser();
+    } else {
+      return [
+        seq2(
+          radix(r),
+          exactness(),
+        ).map2((rd, e) => Prefix("${rd.$1}${e.$1}", rd.$2, e.$2)),
+        seq2(
+          exactness(),
+          radix(r),
+        ).map2((e, rd) => Prefix("${e.$1}${rd.$1}", rd.$2, e.$2)),
+        radix(r).map((rd) => Prefix("${rd.$1}", rd.$2, Exactness.exact)),
+        exactness().map((e) => Prefix("${e.$1}", Radix.dec, e.$2)),
+        epsilonWith(Prefix("", Radix.dec, Exactness.exact)),
+      ].toChoiceParser();
+    }
+  }
+
   /// Parses the four infinite and not-a-number strings
   Parser<WeirdNum> infnan() => [
     string(
@@ -831,29 +884,16 @@ class SchemeGrammar extends GrammarDefinition {
 
   /// Parses "+", "", or "-" to return 1, 1, or -1, respectively
   Parser<String> sign() => pattern("+-").optional().flatten();
-  /*
-  Parser<Exactness> exactness() =>
+
+  Parser<(String, Exactness)> exactness() =>
       seq2(char("#"), pattern("ie", ignoreCase: true)).flatten().map(
-        (s) =>
-            s.toLowerCase().endsWith("i") ? Exactness.inexact : Exactness.exact,
+        (s) => s.toLowerCase().endsWith("i")
+            ? (s, Exactness.inexact)
+            : (s, Exactness.exact),
       );
 
-  Parser<int> radix(int r) {
-    if (r == 2) {
-      return string("#b", ignoreCase: true).mapTo(2);
-    } else if (r == 8) {
-      return string("#o", ignoreCase: true).mapTo(8);
-    } else if (r == 16) {
-      return string("#x", ignoreCase: true).mapTo(16);
-    } else if (r == 10) {
-      return string("#d", ignoreCase: true).mapTo(10);
-    } else {
-      throw ArgumentError(
-        "only a radix of 2, 8, 10, or 16 is allowed, given $r",
-      );
-    }
-  }
-*/
+  Parser<(String, Radix)> radix(Radix r) => r.prefixParser;
+
   /// Parses a single digit in the given base
   Parser<String> digit(Radix r) => r.digitParser;
 
@@ -902,9 +942,9 @@ class SchemeGrammar extends GrammarDefinition {
   Parser defineRecordType() => string("define-record-type");
   Parser syntaxRules() => string("syntax-rules");
   Parser ellipsis() => string("...");
-
+*/
   Parser<String> quote() => char("'");
-  Parser<String> lambda() => string("lambda");
+  /*  Parser<String> lambda() => string("lambda");
   Parser sIf() => string("if");
   Parser<String> setBang() => string("set!");
   Parser<String> begin() => string("begin");
@@ -929,19 +969,16 @@ class SchemeGrammar extends GrammarDefinition {
 /// Legal scheme radixes: 2, 8, 10, 16 (plus one for inf and nan)
 enum Radix {
   /// binary
-  bin(2, "01"),
+  bin(2, "01", "#b"),
 
   /// octal
-  oct(8, "01234567"),
+  oct(8, "01234567", "#o"),
 
   /// decimal
-  dec(10, "012346789"),
+  dec(10, "012346789", "#d"),
 
   /// hexadecimal
-  hex(16, "0123456789abcdefABCDEF"),
-
-  /// no real radix (inf or nan)
-  infNan(0, "");
+  hex(16, "0123456789abcdefABCDEF", "#x");
 
   /// the numeric value of the radix
   final int value;
@@ -949,8 +986,10 @@ enum Radix {
   /// a string containing the legal digits for the radix
   final String legalDigits;
 
+  final String prefix;
+
   /// constructor
-  const Radix(this.value, this.legalDigits);
+  const Radix(this.value, this.legalDigits, this.prefix);
 
   /// parser for a digit in this Radix
   Parser<String> get digitParser => switch (this) {
@@ -958,13 +997,23 @@ enum Radix {
     oct => pattern("0-7"),
     dec => pattern("0-9"),
     hex => pattern("0-9a-f", ignoreCase: true),
-    infNan => throw ArgumentError("can't get digitParser from InfNan"),
   };
+
+  Parser<(String, Radix)> get prefixParser =>
+      string(prefix, ignoreCase: true).map((s) => (s, this));
 }
 
 /// Converts a Token<T> into a Token<String> where the String is
 /// the substring read to create the token
-extension ToStringToken<T> on Token<T> {
+extension TokenOps<T> on Token<T> {
   Token<String> get toStringToken =>
       Token(buffer.substring(start, stop), buffer, start, stop);
+
+  Token<U> mapValue<U>(U Function(T) f) => Token(f(value), buffer, start, stop);
+}
+
+final BigInt maxByte = BigInt.from(255);
+
+extension IsByte on BigInt {
+  bool isByte() => this >= BigInt.zero && this <= maxByte;
 }
