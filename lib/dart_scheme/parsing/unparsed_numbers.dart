@@ -1,26 +1,34 @@
-import "package:dart_mappable/dart_mappable.dart";
-import "package:dart_scheme/dart_scheme/parser.dart";
+import "package:dart_scheme/dart_scheme/parsing/parser.dart";
 
 import "numbers.dart";
-
-part "unparsed_numbers.mapper.dart";
 
 /// Parts of numeric values in (mostly) String form, before they've
 /// been parsed. Depending on prefix, could end up as exact or inexact numbers
 
 /// Representation for a numeric prefix, such as "#e#b" for exact binary
-@MappableClass()
-class Prefix with PrefixMappable {
+class Prefix {
   final String input;
   final Radix radix;
   final Exactness exactness;
 
   Prefix(this.input, this.radix, this.exactness);
+
+  @override
+  String toString() => input;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+          other is Prefix &&
+              input == other.input && radix == other.radix &&
+              exactness == other.exactness;
+
+  @override
+  int get hashCode => Object.hash(input, radix, exactness);
 }
 
 /// A prefix and a NumString following it
-@MappableClass()
-class PrefixedNumString with PrefixedNumStringMappable {
+class PrefixedNumString {
   final Prefix prefix;
   final NumString numString;
 
@@ -43,15 +51,14 @@ sealed class NumString {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-          other is NumString && runtimeType == other.runtimeType &&
+          other is NumString &&
               input == other.input && radix == other.radix;
 
   @override
   int get hashCode => Object.hash(input, radix);
 }
 
-@MappableClass()
-class Suffix with SuffixMappable {
+class Suffix {
   String input;
 
   Suffix(this.input);
@@ -63,6 +70,15 @@ class Suffix with SuffixMappable {
         : withoutE;
     return int.parse(stripPlus);
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+          other is Suffix &&
+              input == other.input;
+
+  @override
+  int get hashCode => input.hashCode;
 }
 
 sealed class RealString extends ComplexString {
@@ -70,8 +86,7 @@ sealed class RealString extends ComplexString {
 }
 
 /// A number of the form <beforeDot>.<afterDot>(E<exponent>)?
-@MappableClass()
-class WithRadixPoint extends RealString with WithRadixPointMappable {
+class WithRadixPoint extends RealString {
   String beforeDot;
   String? afterDot;
   Suffix suffix;
@@ -163,7 +178,6 @@ class WithRadixPoint extends RealString with WithRadixPointMappable {
   bool operator ==(Object other) =>
       identical(this, other) ||
           super == other && other is WithRadixPoint &&
-              runtimeType == other.runtimeType &&
               beforeDot == other.beforeDot &&
               afterDot == other.afterDot &&
               suffix == other.suffix;
@@ -173,8 +187,7 @@ class WithRadixPoint extends RealString with WithRadixPointMappable {
 }
 
 /// Wrapper class for Inf and NaN values
-@MappableClass()
-class WeirdNum extends RealString with WeirdNumMappable {
+class WeirdNum extends RealString {
   /// This WeirdNum's double value, either double.
   /// infinity, negativeInfinity, or nan
   double value;
@@ -193,7 +206,7 @@ class WeirdNum extends RealString with WeirdNumMappable {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-          other is WeirdNum && runtimeType == other.runtimeType &&
+          other is WeirdNum &&
               (value.isNaN && other.value.isNaN || value == other.value);
 
   @override
@@ -201,8 +214,7 @@ class WeirdNum extends RealString with WeirdNumMappable {
 }
 
 /// Represents an integer in a given base
-@MappableClass()
-class IntString extends RealString with IntStringMappable {
+class IntString extends RealString {
   /// digits understood (may be "0" in, e.g., "+i")
   String digits;
 
@@ -211,11 +223,18 @@ class IntString extends RealString with IntStringMappable {
 
   @override
   IntString negate() => IntString("-$input", radix, "-$digits");
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+          other is IntString && digits == other.digits;
+
+  @override
+  int get hashCode => digits.hashCode;
 }
 
 /// Represents a rational number
-@MappableClass()
-class FracString extends RealString with FracStringMappable {
+class FracString extends RealString {
   final String numerator;
   final String denominator;
 
@@ -230,6 +249,15 @@ class FracString extends RealString with FracStringMappable {
 
   @override
   String toString() => "FracString($radix, $numerator, $denominator)";
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+          super == other && other is FracString &&
+              numerator == other.numerator && denominator == other.denominator;
+
+  @override
+  int get hashCode => Object.hash(super.hashCode, numerator, denominator);
 }
 
 sealed class ComplexString extends NumString {
@@ -238,8 +266,7 @@ sealed class ComplexString extends NumString {
 
 /// Represents a complex number, note that radixes should match unless
 /// one or more of real and imag is Inf or NaN.
-@MappableClass()
-class CartesianComplexString extends ComplexString with CartesianComplexStringMappable {
+class CartesianComplexString extends ComplexString {
   /// real part
   final RealString real;
 
@@ -262,7 +289,7 @@ class CartesianComplexString extends ComplexString with CartesianComplexStringMa
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-          other is CartesianComplexString && runtimeType == other.runtimeType &&
+          other is CartesianComplexString &&
               real == other.real && imag == other.imag;
 
   @override
@@ -275,8 +302,7 @@ class CartesianComplexString extends ComplexString with CartesianComplexStringMa
 }
 
 /// A complex number in the form radius@thetai
-@MappableClass()
-class PolarComplexString extends ComplexString with PolarComplexStringMappable {
+class PolarComplexString extends ComplexString {
   /// magnitude of the represented complex number
   final RealString radius;
 
@@ -310,7 +336,6 @@ class PolarComplexString extends ComplexString with PolarComplexStringMappable {
       identical(this, other) ||
       super == other &&
           other is PolarComplexString &&
-          runtimeType == other.runtimeType &&
           input == other.input &&
           radix == other.radix &&
           radius == other.radius &&

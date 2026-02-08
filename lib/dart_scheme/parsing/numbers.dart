@@ -1,13 +1,9 @@
 import "dart:math";
 
 import "package:big_decimal/big_decimal.dart";
-import "package:dart_mappable/dart_mappable.dart";
-import "package:dart_scheme/dart_scheme/parser.dart";
-import "package:dart_scheme/dart_scheme/unparsed_numbers.dart";
+import "package:dart_scheme/dart_scheme/parsing/parser.dart";
+import "package:dart_scheme/dart_scheme/parsing/unparsed_numbers.dart";
 import "package:petitparser/parser.dart";
-
-part "numbers.mapper.dart";
-
 
 abstract class SNumber {
   final Radix radix;
@@ -135,8 +131,7 @@ abstract class SExactReal extends SExact {
       SExactComplex(radix, this, SExactInteger(radix, BigInt.zero));
 }
 
-@MappableClass()
-class SExactRational extends SExactReal with SExactRationalMappable {
+class SExactRational extends SExactReal {
   final BigInt numerator;
   final BigInt denominator;
 
@@ -153,11 +148,19 @@ class SExactRational extends SExactReal with SExactRationalMappable {
 
   @override
   double toDouble() => numerator / denominator;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+          other is SExactRational  &&
+              numerator == other.numerator && denominator == other.denominator;
+
+  @override
+  int get hashCode => Object.hash(numerator, denominator);
 }
 
 // For now, only handles base 10
-@MappableClass()
-class SExactWithRadixPoint extends SExactReal with SExactWithRadixPointMappable {
+class SExactWithRadixPoint extends SExactReal {
   final BigDecimal value;
 
   const SExactWithRadixPoint(this.value) : super(Radix.dec);
@@ -180,10 +183,19 @@ class SExactWithRadixPoint extends SExactReal with SExactWithRadixPointMappable 
 
   @override
   String toString() => value.toString();
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+          other is SExactWithRadixPoint &&
+              value == other.value;
+
+  @override
+  int get hashCode => value.hashCode;
+
 }
 
-@MappableClass()
-class SExactInteger extends SExactReal with SExactIntegerMappable {
+class SExactInteger extends SExactReal {
   final BigInt value;
 
   const SExactInteger(super.radix, this.value);
@@ -196,10 +208,17 @@ class SExactInteger extends SExactReal with SExactIntegerMappable {
 
   @override
   String toString() => value.toString();
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+          other is SExactInteger && value == other.value;
+
+  @override
+  int get hashCode => value.hashCode;
 }
 
-@MappableClass()
-class SInexactReal extends SInexact with SInexactRealMappable {
+class SInexactReal extends SInexact {
   final double value;
 
   const SInexactReal(super.radix, this.value);
@@ -211,18 +230,15 @@ class SInexactReal extends SInexact with SInexactRealMappable {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-          other is SInexactReal && runtimeType == other.runtimeType &&
+          other is SInexactReal &&
               (value.isNaN && value.isNaN ||
               value == other.value);
 
   @override
   int get hashCode => value.hashCode;
-
-
 }
 
-@MappableClass()
-class SExactComplex extends SExact with SExactComplexMappable {
+class SExactComplex extends SExact {
   final SExactReal real;
   final SExactReal imag;
 
@@ -230,10 +246,19 @@ class SExactComplex extends SExact with SExactComplexMappable {
 
   @override
   SExactComplex toComplex() => this;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+          other is SExactComplex &&
+              real == other.real && imag == other.imag;
+
+  @override
+  int get hashCode => Object.hash(real, imag);
+
 }
 
-@MappableClass()
-class SInexactComplex extends SInexact with SInexactComplexMappable {
+class SInexactComplex extends SInexact {
   final SInexactReal real;
   final SInexactReal imag;
 
@@ -245,12 +270,11 @@ class SInexactComplex extends SInexact with SInexactComplexMappable {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-          other is SInexactComplex && runtimeType == other.runtimeType &&
+          other is SInexactComplex &&
               real == other.real && imag == other.imag;
 
   @override
   int get hashCode => Object.hash(real, imag);
-
 }
 
 /// Tag for exact or inexact numbers

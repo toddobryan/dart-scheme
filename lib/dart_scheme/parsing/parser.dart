@@ -1,6 +1,7 @@
-import "package:dart_scheme/dart_scheme/ast.dart";
 import "package:dart_scheme/dart_scheme/error_messages.dart" as err;
-import "package:dart_scheme/dart_scheme/unparsed_numbers.dart";
+import "package:dart_scheme/dart_scheme/parsing/ast.dart";
+import "package:dart_scheme/dart_scheme/parsing/unparsed_numbers.dart";
+import "package:dart_scheme/dart_scheme/utils.dart";
 import "package:petitparser/petitparser.dart";
 
 import "numbers.dart";
@@ -422,14 +423,21 @@ class SchemeGrammar extends GrammarDefinition {
 */
   // 7.1.2 External Representations
 
-  Parser<SExpr<dynamic>> datum() => [
+  Parser<Datum<dynamic>> datum() => [
     ref0(simpleDatum),
     ref0(compoundDatum),
-    seq3(label(), char("="), ref0(datum)),
-    seq2(label(), char("#")),
+    seq3(
+      label(),
+      char("="),
+      ref0(datum),
+    ).token().mapTokenValue((v) => (v.$1, v.$3)).map(LabelDef.new),
+    seq2(
+      label(),
+      char("#"),
+    ).token().mapTokenValue((v) => v.$1).map(LabelRef.new),
   ].toChoiceParser();
 
-  Parser<SExpr<dynamic>> simpleDatum() => [
+  Parser<Datum<dynamic>> simpleDatum() => [
     boolean(),
     number(),
     character(),
@@ -438,30 +446,45 @@ class SchemeGrammar extends GrammarDefinition {
     byteVector(),
   ].toChoiceParser();
 
-  Parser<SExpr<String>> symbol() => identifier();
+  Parser<Atom<String>> symbol() => identifier();
 
-  Parser<SExpr<dynamic>> compoundDatum() =>
-      [ref0(list), ref0(vector), ref0(abbreviation)].toChoiceParser();
+  Parser<CompoundDatum<dynamic>> compoundDatum() =>
+      [ref0(list), ref0(vector), ref0(abbreviation)].toChoiceParser().cast();
 
-  SExpr<dynamic> makePair(List<SExpr<dynamic>> elts, SExpr<dynamic> last) {
-    if (elts.isEmpty) {
-      return Nil(null);
-    }
-    elts.reversed.fold(last, (prev, elt) => Pair(elt, prev));
-  }
-
-  Parser<SExpr<dynamic>> list() => [
-    seq3(lParen(), ref0(datum).star(), rParen()).token().map((t) => t.mapValue((tt) => makePair(tt.value.$2, Nil(null))),
-    seq5(lParen(), ref0(datum).plus(), dot(), ref0(datum), rParen()).token().map((t) => t.mapValue((tt) => makePair(tt.value.$2, tt.value.$4)))),
+  Parser<SList<dynamic>> list() => [
+    seq3(
+      lParen(),
+      ref0(datum).trim().star(),
+      rParen(),
+    ).token().mapTokenValue((v) => ImmutableList(v.$2)).map(SList.fromList),
+    seq5(
+          lParen(),
+          ref0(datum).trim().plus(),
+          dot().trim(),
+          ref0(datum).trim(),
+          rParen(),
+        )
+        .token()
+        .mapTokenValue((v) => (ImmutableList(v.$2), v.$4))
+        .map(SList.fromDottedList),
   ].toChoiceParser();
 
-  Parser<SExpr<dynamic>> abbreviation() => seq2(abbrevPrefix(), ref0(datum));
+  Parser<SAbbrev<dynamic>> abbreviation() => seq2(
+    abbrevPrefix(),
+    ref0(datum),
+  ).token().mapTokenValue((v) => (v.$1, v.$2)).map(SAbbrev.new);
 
-  Parser<String> abbrevPrefix() =>
-      [quote(), backtick(), comma(), commaAt()].toChoiceParser();
+  Parser<Abbrev> abbrevPrefix() =>
+      [quote(), backtick(), commaAt(), comma()].toChoiceParser();
 
-  Parser vector() => seq3(hashParen(), ref0(datum).star(), rParen());
-  Parser label() => seq2(char("#"), uinteger(Radix.dec));
+  Parser<SVector> vector() => seq3(
+    hashParen(),
+    ref0(datum).trim().star(),
+    rParen(),
+  ).token().mapTokenValue((v) => ImmutableList(v.$2)).map(SVector.new);
+
+  Parser<IntString> label() =>
+      seq2(char("#"), uinteger(Radix.dec)).map((x) => x.$2);
 
   // 7.1.1 Lexical Structure
 
@@ -506,9 +529,9 @@ class SchemeGrammar extends GrammarDefinition {
   Parser<String> rParen() => char(")");
   Parser<String> hashParen() => string("#(");
   Parser<String> hashU8Paren() => string("#u8(");
-  Parser<String> backtick() => char("`");
-  Parser<String> comma() => char(",");
-  Parser<String> commaAt() => string(",@");
+  Parser<Abbrev> backtick() => char("`").mapTo(Abbrev.backtick);
+  Parser<Abbrev> comma() => char(",").mapTo(Abbrev.comma);
+  Parser<Abbrev> commaAt() => string(",@").mapTo(Abbrev.commaAt);
 
   /// Parses a period
   Parser<String> dot() => char(".");
@@ -550,7 +573,7 @@ class SchemeGrammar extends GrammarDefinition {
 */
   Parser<void> eof() => endOfInput();
 
-  Parser<SExpr<String>> identifier() => [
+  Parser<Atom<String>> identifier() => [
     seq2(initial(), subsequent().star()).flatten(),
     seq3(
       verticalLine(),
@@ -618,8 +641,8 @@ class SchemeGrammar extends GrammarDefinition {
   ].toChoiceParser();
 
   /// Parses #t, #true, #f, and #false
-  Parser<SExpr<bool>> boolean() =>
-      <Parser<SExpr<bool>>>[
+  Parser<Atom<bool>> boolean() =>
+      <Parser<Atom<bool>>>[
         [string("#true"), string("#t")]
             .toChoiceParser()
             .map((_) => true)
@@ -635,7 +658,7 @@ class SchemeGrammar extends GrammarDefinition {
       );
 
   /// Parses a legal Scheme character literal
-  Parser<SExpr<String>> character() => [
+  Parser<Atom<String>> character() => [
     seq2(
       string("#\\"),
       characterName(),
@@ -664,7 +687,7 @@ class SchemeGrammar extends GrammarDefinition {
   ].toChoiceParser();
 
   /// Parses a legal Scheme string
-  Parser<SExpr<String>> sString() => seq3(
+  Parser<Atom<String>> sString() => seq3(
     doubleQuote(),
     stringElement().star().map((ss) => ss.join("")),
     doubleQuote(),
@@ -685,35 +708,29 @@ class SchemeGrammar extends GrammarDefinition {
     pattern(r'^"\'),
   ].toChoiceParser();
 
-  Parser<Atom<SList<SExpr<SNumber>>>> byteVector() =>
+  Parser<Atom<ImmutableList<SExpr<SNumber>>>> byteVector() =>
       seq3(hashU8Paren(), sByte().trim().star(), rParen()).token().map(
         (t) => Atom(
-          Token(
-            SList(t.value.$2),
-            t.buffer,
-            t.start,
-            t.stop,
-          ),
+          Token(ImmutableList(t.value.$2), t.buffer, t.start, t.stop),
           SExprType.byteVector,
         ),
       );
 
   // TODO: maybe move check for range into byteVector, since can get
   // ")" expected if it truncates a number that is too big
-  Parser<SExpr<SNumber>> sByte() => number()
-      .where(
-        (sexp) =>
-            sexp.token!.value is SExactInteger &&
-            (sexp.token!.value as SExactInteger).value.isByte(),
-        factory: (context, success) => context.failure(
-          "Failure at [${context.toPositionString()}]: "
-          "byte-vector values must be exact integers "
-          "in the range [0, 255]",
-          context.position,
-        ),
-      );
+  Parser<SExpr<SNumber>> sByte() => number().where(
+    (sexp) =>
+        sexp.token!.value is SExactInteger &&
+        (sexp.token!.value as SExactInteger).value.isByte(),
+    factory: (context, success) => context.failure(
+      "Failure at [${context.toPositionString()}]: "
+      "byte-vector values must be exact integers "
+      "in the range [0, 255]",
+      context.position,
+    ),
+  );
 
-  Parser<SExpr<SNumber>> number() => [
+  Parser<Atom<SNumber>> number() => [
     sNum(Radix.bin),
     sNum(Radix.oct),
     sNum(Radix.dec),
@@ -943,7 +960,7 @@ class SchemeGrammar extends GrammarDefinition {
   Parser syntaxRules() => string("syntax-rules");
   Parser ellipsis() => string("...");
 */
-  Parser<String> quote() => char("'");
+  Parser<Abbrev> quote() => char("'").mapTo(Abbrev.quote);
   /*  Parser<String> lambda() => string("lambda");
   Parser sIf() => string("if");
   Parser<String> setBang() => string("set!");
@@ -1008,8 +1025,11 @@ enum Radix {
 extension TokenOps<T> on Token<T> {
   Token<String> get toStringToken =>
       Token(buffer.substring(start, stop), buffer, start, stop);
+}
 
-  Token<U> mapValue<U>(U Function(T) f) => Token(f(value), buffer, start, stop);
+extension MapTokenValue<T, U> on Parser<Token<T>> {
+  Parser<Token<U>> mapTokenValue<U>(U Function(T) f) =>
+      map((t) => Token(f(t.value), t.buffer, t.start, t.stop));
 }
 
 final BigInt maxByte = BigInt.from(255);

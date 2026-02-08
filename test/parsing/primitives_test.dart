@@ -1,8 +1,9 @@
 import "package:checks/checks.dart";
-import "package:dart_scheme/dart_scheme/ast.dart";
 import "package:dart_scheme/dart_scheme/error_messages.dart" as error_messages;
-import "package:dart_scheme/dart_scheme/numbers.dart";
-import "package:dart_scheme/dart_scheme/parser.dart";
+import "package:dart_scheme/dart_scheme/parsing/ast.dart";
+import "package:dart_scheme/dart_scheme/parsing/numbers.dart";
+import "package:dart_scheme/dart_scheme/parsing/parser.dart";
+import "package:dart_scheme/dart_scheme/utils.dart";
 import "package:petitparser/petitparser.dart";
 import "package:petitparser/reflection.dart";
 import "package:test/test.dart";
@@ -172,17 +173,17 @@ void main() {
     });
 
     test("parsing bytevector", () {
-      final Parser<SExpr<SList<SExpr<SNumber>>>> p = g.buildFrom(
+      final Parser<SExpr<ImmutableList<SExpr<SNumber>>>> p = g.buildFrom(
         g.byteVector().end(),
       );
       check(
         p.parse("#u8()"),
-      ).succeeds("#u8()", SExprType.byteVector, SList([]), 0, 5);
+      ).succeeds("#u8()", SExprType.byteVector, ImmutableList([]), 0, 5);
       final String bv = "#u8(0 128 255)";
       check(p.parse(bv)).succeeds(
         bv,
         SExprType.byteVector,
-        SList([
+        ImmutableList([
           Atom(
             Token(SExactInteger(Radix.dec, BigInt.zero), "0", 4, 5),
             SExprType.number,

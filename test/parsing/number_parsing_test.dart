@@ -1,8 +1,8 @@
 import "package:checks/checks.dart";
-import "package:dart_scheme/dart_scheme/ast.dart";
-import "package:dart_scheme/dart_scheme/numbers.dart";
-import "package:dart_scheme/dart_scheme/parser.dart";
-import "package:dart_scheme/dart_scheme/unparsed_numbers.dart";
+import "package:dart_scheme/dart_scheme/parsing/ast.dart";
+import "package:dart_scheme/dart_scheme/parsing/numbers.dart";
+import "package:dart_scheme/dart_scheme/parsing/parser.dart";
+import "package:dart_scheme/dart_scheme/parsing/unparsed_numbers.dart";
 import "package:dartcheck/gen.dart";
 import "package:dartcheck/prop.dart";
 import "package:petitparser/parser.dart";

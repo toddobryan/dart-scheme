@@ -1,6 +1,6 @@
-import "package:dart_scheme/dart_scheme/numbers.dart";
-import "package:dart_scheme/dart_scheme/parser.dart";
-import "package:dart_scheme/dart_scheme/unparsed_numbers.dart" as upn;
+import "package:dart_scheme/dart_scheme/parsing/numbers.dart";
+import "package:dart_scheme/dart_scheme/parsing/parser.dart";
+import "package:dart_scheme/dart_scheme/parsing/unparsed_numbers.dart" as upn;
 import "package:dartcheck/gen.dart";
 
 /// Generates random Radixes

@@ -1,7 +1,7 @@
 
 import "package:checks/checks.dart";
 import "package:checks/context.dart";
-import "package:dart_scheme/dart_scheme/ast.dart";
+import "package:dart_scheme/dart_scheme/parsing/ast.dart";
 import "package:petitparser/core.dart";
 
 extension ResultSExprChecks<T> on Subject<Result<SExpr<T>>> {
@@ -59,7 +59,7 @@ extension ResultSExprChecks<T> on Subject<Result<SExpr<T>>> {
 
 extension SExprChecks<T> on Subject<SExpr<T>> {
   Subject<T> get value => has((a) => a.value!, "value");
-  Subject<SExprType> get type => has((a) => a.type!, "type");
+  Subject<SExprType> get type => has((a) => a.type, "type");
   Subject<String> get input => has((t) => t.input!, "input");
   Subject<int> get start => has((t) => t.start!, "start");
   Subject<int> get stop => has((t) => t.stop!, "stop");
@@ -80,6 +80,7 @@ extension ResultChecks<T> on Subject<Result<T>> {
 
   Subject<Success<T>> succeeds(T value, int position) {
     final Subject<Success<T>> subj = isSuccess;
+    print(value);
     subj.value.equals(value);
     subj.position.equals(position);
     return subj;
