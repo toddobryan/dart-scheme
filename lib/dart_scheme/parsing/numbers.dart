@@ -5,25 +5,27 @@ import "package:dart_scheme/dart_scheme/parsing/parser.dart";
 import "package:dart_scheme/dart_scheme/parsing/unparsed_numbers.dart";
 import "package:petitparser/parser.dart";
 
-abstract class SNumber {
+import "../utils.dart";
+
+abstract class SNumberValue {
   final Radix radix;
 
-  const SNumber(this.radix);
+  const SNumberValue(this.radix);
 
-  static SNumber make(PrefixedNumString number) {
+  static SNumberValue make(PrefixedNumString number) {
     assert(number.prefix.radix ==
         number.numString.radix, "Radix values don't match");
     return _make(number.prefix.exactness, number.numString);
   }
 
-  static SNumber _make(Exactness ex, NumString numString) =>
+  static SNumberValue _make(Exactness ex, NumString numString) =>
       switch (ex) {
         Exactness.exact =>
         switch (numString) {
           WeirdNum() =>
           throw ArgumentError("Can't create exact Inf or NaN value"),
           IntString(radix: final Radix r, digits: final String d) =>
-              SExactInteger(r, BigInt.parse(d, radix: r.value)),
+              SExactInteger(r, FlexInt.fromBigInt(BigInt.parse(d, radix: r.value))),
           FracString(
           radix: final Radix r,
           numerator: final String n,
@@ -31,8 +33,8 @@ abstract class SNumber {
           ) =>
               SExactRational(
                 r,
-                BigInt.parse(n, radix: r.value),
-                BigInt.parse(d, radix: r.value),
+                FlexInt.fromBigInt(BigInt.parse(n, radix: r.value)),
+                FlexInt.fromBigInt(BigInt.parse(d, radix: r.value)),
               ),
           WithRadixPoint(input: final String i) =>
               SExactWithRadixPoint(BigDecimal.parse(i)),
@@ -43,8 +45,8 @@ abstract class SNumber {
           ) =>
               SExactComplex(
                 r,
-                SNumber._make(ex, re) as SExactReal,
-                SNumber._make(ex, im) as SExactReal,
+                SNumberValue._make(ex, re) as SExactReal,
+                SNumberValue._make(ex, im) as SExactReal,
               ),
           PolarComplexString(
           radix: final Radix r,
@@ -69,8 +71,8 @@ abstract class SNumber {
           ) =>
               SInexactComplex(
                 r,
-                SNumber._make(Exactness.inexact, re) as SInexactReal,
-                SNumber._make(Exactness.inexact, im) as SInexactReal,
+                SNumberValue._make(Exactness.inexact, re) as SInexactReal,
+                SNumberValue._make(Exactness.inexact, im) as SInexactReal,
               ),
           PolarComplexString(
           radix: final Radix r,
@@ -82,11 +84,11 @@ abstract class SNumber {
 }
 
 SExactComplex _makeExactComplexFromPolar(Radix r, RealString magString, RealString angleString) {
-  final double mag = (SNumber._make(Exactness.exact, magString) as SExactReal).toDouble();
+  final double mag = (SNumberValue._make(Exactness.exact, magString) as SExactReal).toDouble();
   if (mag.isInfinite || mag.isNaN) {
     throw ArgumentError("polar coordinates must be representable as finite doubles, but ${magString.input} is not");
   }
-  final double angle = (SNumber._make(Exactness.exact, angleString) as SExactReal).toDouble();
+  final double angle = (SNumberValue._make(Exactness.exact, angleString) as SExactReal).toDouble();
   if (angle.isInfinite || angle.isNaN) {
     throw ArgumentError("polar coordinates must be representable as finite doubles, but ${angleString.input} is not");
   }
@@ -96,8 +98,8 @@ SExactComplex _makeExactComplexFromPolar(Radix r, RealString magString, RealStri
 }
 
 SInexactComplex _makeInexactComplexFromPolar(Radix r, RealString magString, RealString angleString) {
-  final double mag = (SNumber._make(Exactness.exact, magString) as SExactReal).toDouble();
-  final double angle = (SNumber._make(Exactness.exact, angleString) as SExactReal).toDouble();
+  final double mag = (SNumberValue._make(Exactness.exact, magString) as SExactReal).toDouble();
+  final double angle = (SNumberValue._make(Exactness.exact, angleString) as SExactReal).toDouble();
   return SInexactComplex(r, SInexactReal(r, mag * cos(angle)), SInexactReal(r, mag * sin(angle)));
 }
 
@@ -107,13 +109,13 @@ SInexactReal _makeInexactFraction(Radix r, String n, String d) {
   return SInexactReal(r, numer / denom);
 }
 
-abstract class SExact extends SNumber {
+abstract class SExact extends SNumberValue {
   const SExact(super.radix);
 
   SExactComplex toComplex();
 }
 
-abstract class SInexact extends SNumber {
+abstract class SInexact extends SNumberValue {
   const SInexact(super.radix);
 
   SInexactComplex toComplex();
@@ -128,18 +130,18 @@ abstract class SExactReal extends SExact {
 
   @override
   SExactComplex toComplex() =>
-      SExactComplex(radix, this, SExactInteger(radix, BigInt.zero));
+      SExactComplex(radix, this, SExactInteger(radix, FlexInt.zero));
 }
 
 class SExactRational extends SExactReal {
-  final BigInt numerator;
-  final BigInt denominator;
+  final FlexInt numerator;
+  final FlexInt denominator;
 
   const SExactRational(super.radix, this.numerator, this.denominator);
 
-  factory SExactRational.fromBigInts(Radix radix, BigInt numerator, BigInt denominator) {
-    assert(denominator > BigInt.zero, "denominator should be positive");
-    final BigInt gcd = numerator.gcd(denominator);
+  factory SExactRational.fromFlexInts(Radix radix, FlexInt numerator, FlexInt denominator) {
+    assert(denominator > FlexInt.zero, "denominator should be positive");
+    final FlexInt gcd = numerator.gcd(denominator);
     return SExactRational(radix, numerator ~/ gcd, denominator ~/ gcd);
   }
 
@@ -171,10 +173,10 @@ class SExactWithRadixPoint extends SExactReal {
   @override
   SExactRational toRational() {
     if (value.scale <= 0) {
-      return SExactRational(radix, value.toBigInt(), BigInt.one);
+      return SExactRational(radix, FlexInt.fromBigInt(value.toBigInt()), FlexInt.one);
     }
-    final BigInt num = value.intVal;
-    final BigInt denom = BigInt.from(10).pow(value.scale);
+    final FlexInt num = FlexInt.fromBigInt(value.intVal);
+    final FlexInt denom = FlexInt.fromBigInt(BigInt.from(10).pow(value.scale));
     return SExactRational(radix, num, denom);
   }
 
@@ -196,12 +198,12 @@ class SExactWithRadixPoint extends SExactReal {
 }
 
 class SExactInteger extends SExactReal {
-  final BigInt value;
+  final FlexInt value;
 
   const SExactInteger(super.radix, this.value);
 
   @override
-  SExactRational toRational() => SExactRational(radix, value, BigInt.one);
+  SExactRational toRational() => SExactRational(radix, value, FlexInt.one);
 
   @override
   double toDouble() => value.toDouble();

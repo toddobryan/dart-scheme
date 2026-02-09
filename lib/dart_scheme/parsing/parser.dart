@@ -1,7 +1,7 @@
 import "package:dart_scheme/dart_scheme/error_messages.dart" as err;
 import "package:dart_scheme/dart_scheme/parsing/ast.dart";
 import "package:dart_scheme/dart_scheme/parsing/unparsed_numbers.dart";
-import "package:dart_scheme/dart_scheme/utils.dart";
+import "package:fast_immutable_collections/fast_immutable_collections.dart";
 import "package:petitparser/petitparser.dart";
 
 import "numbers.dart";
@@ -317,10 +317,10 @@ class SchemeGrammar extends GrammarDefinition {
     seq2(commaAt(), ref1(qqTemplate, depth - 1)),
     seq4(lParen(), unquoteSplicing(), ref1(qqTemplate, depth - 1), rParen()),
   ].toChoiceParser();
-
+*/
   // 7.1.3 Expressions
-
-  Parser expression() => [
+/*
+  Parser<Expr<dynamic>> expression() => [
     identifier(),
     literal(),
     ref0(procedureCall),
@@ -332,9 +332,9 @@ class SchemeGrammar extends GrammarDefinition {
     ref0(includer),
   ].toChoiceParser();
 
-  Parser literal() => [ref0(quotation), selfEvaluating()].toChoiceParser();
+  Parser<Expr<dynamic>> literal() => [ref0(quotation), selfEvaluating()].toChoiceParser();
 
-  Parser selfEvaluating() => [
+  Parser<Expr<dynamic>> selfEvaluating() => [
     boolean(),
     number(),
     character(),
@@ -342,7 +342,7 @@ class SchemeGrammar extends GrammarDefinition {
     byteVector(),
   ].toChoiceParser();
 
-  Parser quotation() => [
+  Parser<Expr<dynamic>> quotation() => [
     seq2(ref0(quote), ref0(datum)),
     seq4(lParen(), ref0(quote), ref0(datum), ref0(rParen)),
   ].toChoiceParser();
@@ -430,33 +430,39 @@ class SchemeGrammar extends GrammarDefinition {
       label(),
       char("="),
       ref0(datum),
-    ).token().mapTokenValue((v) => (v.$1, v.$3)).map(LabelDef.new),
+    ).map3((ln, _, d) => VLabelDef(ln, d))
+        .token()
+    .map(SLabelDef.fromToken)
+    ,
     seq2(
       label(),
       char("#"),
-    ).token().mapTokenValue((v) => v.$1).map(LabelRef.new),
-  ].toChoiceParser();
+    ).map2((ln, _) => ln)
+        .token().map(SLabelRef.fromToken),
+  ].toChoiceParser().cast<Datum<dynamic>>();
 
-  Parser<Datum<dynamic>> simpleDatum() => [
+  Parser<SimpleDatum<dynamic>> simpleDatum() => [
     boolean(),
     number(),
     character(),
     sString(),
     symbol(),
-    byteVector(),
-  ].toChoiceParser();
+    byteVector() as Parser<SByteVector>,
+  ].toChoiceParser().cast<SimpleDatum<dynamic>>();
 
-  Parser<Atom<String>> symbol() => identifier();
+  Parser<SSymbol> symbol() => identifier().map(SSymbol.fromToken);
 
   Parser<CompoundDatum<dynamic>> compoundDatum() =>
       [ref0(list), ref0(vector), ref0(abbreviation)].toChoiceParser().cast();
 
-  Parser<SList<dynamic>> list() => [
+  Parser<CompoundDatum<dynamic>> list() => [
     seq3(
       lParen(),
       ref0(datum).trim().star(),
       rParen(),
-    ).token().mapTokenValue((v) => ImmutableList(v.$2)).map(SList.fromList),
+    ).map3((_, ds, _) => VList<dynamic, Null>(IList(ds), null))
+        .token()
+        .map(SList.fromToken),
     seq5(
           lParen(),
           ref0(datum).trim().plus(),
@@ -464,27 +470,29 @@ class SchemeGrammar extends GrammarDefinition {
           ref0(datum).trim(),
           rParen(),
         )
+    .map5((_, ds, _, last, _) => VList(IList(ds), last))
         .token()
-        .mapTokenValue((v) => (ImmutableList(v.$2), v.$4))
-        .map(SList.fromDottedList),
-  ].toChoiceParser();
+        .map(SList.fromToken),
+  ].toChoiceParser().cast<CompoundDatum<dynamic>>();
 
-  Parser<SAbbrev<dynamic>> abbreviation() => seq2(
+  Parser<SAbbreviation<dynamic>> abbreviation() => seq2(
     abbrevPrefix(),
     ref0(datum),
-  ).token().mapTokenValue((v) => (v.$1, v.$2)).map(SAbbrev.new);
+  ).map2(VAbbrev.new)
+      .token().map(SAbbreviation.fromToken);
 
-  Parser<Abbrev> abbrevPrefix() =>
+  Parser<AbbrevType> abbrevPrefix() =>
       [quote(), backtick(), commaAt(), comma()].toChoiceParser();
 
-  Parser<SVector> vector() => seq3(
+  Parser<SVector<dynamic>> vector() => seq3(
     hashParen(),
     ref0(datum).trim().star(),
     rParen(),
-  ).token().mapTokenValue((v) => ImmutableList(v.$2)).map(SVector.new);
+  ).map3((_, ds, _) => IList(ds))
+  .token().map(SVector.fromToken);
 
-  Parser<IntString> label() =>
-      seq2(char("#"), uinteger(Radix.dec)).map((x) => x.$2);
+  Parser<int> label() =>
+      seq2(char("#"), uinteger(Radix.dec)).map((x) => int.parse(x.$2.digits));
 
   // 7.1.1 Lexical Structure
 
@@ -529,9 +537,9 @@ class SchemeGrammar extends GrammarDefinition {
   Parser<String> rParen() => char(")");
   Parser<String> hashParen() => string("#(");
   Parser<String> hashU8Paren() => string("#u8(");
-  Parser<Abbrev> backtick() => char("`").mapTo(Abbrev.backtick);
-  Parser<Abbrev> comma() => char(",").mapTo(Abbrev.comma);
-  Parser<Abbrev> commaAt() => string(",@").mapTo(Abbrev.commaAt);
+  Parser<AbbrevType> backtick() => char("`").mapTo(.backtick);
+  Parser<AbbrevType> comma() => char(",").mapTo(.comma);
+  Parser<AbbrevType> commaAt() => string(",@").mapTo(.commaAt);
 
   /// Parses a period
   Parser<String> dot() => char(".");
@@ -573,15 +581,15 @@ class SchemeGrammar extends GrammarDefinition {
 */
   Parser<void> eof() => endOfInput();
 
-  Parser<Atom<String>> identifier() => [
+  Parser<Token<String>> identifier() => [
     seq2(initial(), subsequent().star()).flatten(),
     seq3(
       verticalLine(),
       ref0(symbolElement).star().map((cs) => cs.join()),
       verticalLine(),
     ).map3((_, s, _) => s),
-    peculiarIdentifier().flatten(),
-  ].toChoiceParser().token().map((t) => Atom(t, SExprType.symbol));
+    peculiarIdentifier(),
+  ].toChoiceParser().token();
 
   Parser<String> initial() => [letter(), specialInitial()].toChoiceParser();
   Parser<String> specialInitial() => anyOf("!\$%*&/:<=>?@^_~");
@@ -641,36 +649,35 @@ class SchemeGrammar extends GrammarDefinition {
   ].toChoiceParser();
 
   /// Parses #t, #true, #f, and #false
-  Parser<Atom<bool>> boolean() =>
-      <Parser<Atom<bool>>>[
+  Parser<SBoolean> boolean() => [
         [string("#true"), string("#t")]
             .toChoiceParser()
             .map((_) => true)
             .token()
-            .map((t) => Atom(t, SExprType.boolean)),
+            .map(SBoolean.fromToken),
         [string("#false"), string("#f")]
             .toChoiceParser()
             .map((_) => false)
             .token()
-            .map((t) => Atom(t, SExprType.boolean)),
+            .map(SBoolean.fromToken),
       ].toChoiceParser(
         failureJoiner: (f1, _) => Failure(f1.buffer, f1.position, err.boolean),
       );
 
   /// Parses a legal Scheme character literal
-  Parser<Atom<String>> character() => [
+  Parser<SCharacter> character() => [
     seq2(
       string("#\\"),
       characterName(),
-    ).map2((_, c) => c).token().map((t) => Atom(t, SExprType.char)),
+    ).map2((_, char) => char).token().map(SCharacter.fromToken),
     seq3(string("#\\x"), hexScalarValue(), char(";"))
         .map3((_, h, _) => String.fromCharCode(int.parse(h, radix: 16)))
         .token()
-        .map((t) => Atom(t, SExprType.char)),
+        .map(SCharacter.fromToken),
     seq2(
       string("#\\"),
       any(unicode: true),
-    ).map2((_, c) => c).token().map((t) => Atom(t, SExprType.char)),
+    ).map2((_, c) => c).token().map(SCharacter.fromToken),
   ].toChoiceParser();
 
   /// Parses the names of named characters
@@ -687,11 +694,11 @@ class SchemeGrammar extends GrammarDefinition {
   ].toChoiceParser();
 
   /// Parses a legal Scheme string
-  Parser<Atom<String>> sString() => seq3(
+  Parser<SString> sString() => seq3(
     doubleQuote(),
     stringElement().star().map((ss) => ss.join("")),
     doubleQuote(),
-  ).map3((_, s, _) => s).token().map((t) => Atom(t, SExprType.string));
+  ).map3((_, s, _) => s).token().map(SString.fromToken);
 
   Parser<String> stringElement() => [
     inlineHexEscape(),
@@ -708,37 +715,28 @@ class SchemeGrammar extends GrammarDefinition {
     pattern(r'^"\'),
   ].toChoiceParser();
 
-  Parser<Atom<ImmutableList<SExpr<SNumber>>>> byteVector() =>
-      seq3(hashU8Paren(), sByte().trim().star(), rParen()).token().map(
-        (t) => Atom(
-          Token(ImmutableList(t.value.$2), t.buffer, t.start, t.stop),
-          SExprType.byteVector,
-        ),
-      );
+  Parser<SByteVector> byteVector() =>
+      seq3(hashU8Paren(), sByte().trim().star(), rParen())
+      .map3((_, nums, _) => IList(nums))
+      .token()
+      .map(SByteVector.fromToken);
 
-  // TODO: maybe move check for range into byteVector, since can get
-  // ")" expected if it truncates a number that is too big
-  Parser<SExpr<SNumber>> sByte() => number().where(
-    (sexp) =>
-        sexp.token!.value is SExactInteger &&
-        (sexp.token!.value as SExactInteger).value.isByte(),
-    factory: (context, success) => context.failure(
-      "Failure at [${context.toPositionString()}]: "
-      "byte-vector values must be exact integers "
-      "in the range [0, 255]",
-      context.position,
-    ),
-  );
 
-  Parser<Atom<SNumber>> number() => [
+  // This parses any number.
+  // That it is a byte is checked in SByteVector.fromToken
+  // Otherwise, we'd get a ")" expected if we have something like #u8(256)
+  // since 25 would parse correctly
+  Parser<SNumber> sByte() => number();
+
+  Parser<SNumber> number() => [
     sNum(Radix.bin),
     sNum(Radix.oct),
     sNum(Radix.dec),
     sNum(Radix.hex),
-  ].toChoiceParser().token().map((t) => Atom(t, SExprType.number));
+  ].toChoiceParser().token().map(SNumber.fromToken);
 
-  Parser<SNumber> sNum(Radix r) =>
-      seq2(prefix(r), complex(r)).map2(PrefixedNumString.new).map(SNumber.make);
+  Parser<SNumberValue> sNum(Radix r) =>
+      seq2(prefix(r), complex(r)).map2(PrefixedNumString.new).map(SNumberValue.make);
 
   /// Parses a legal complex number into a NumString
   Parser<ComplexString> complex(Radix r) => <Parser<ComplexString>>[
@@ -759,7 +757,7 @@ class SchemeGrammar extends GrammarDefinition {
         .labeled("r-ri"),
     seq3(real(r), infnan(), char("i", ignoreCase: true))
         .map3((rl, inf, i) => comp("${rl.input}${inf.input}$i", rl, inf))
-        .labeled("r&infnani"),
+        .labeled("r&inf-or-nan-i"),
     seq3(
       real(r),
       char("+"),
@@ -960,7 +958,7 @@ class SchemeGrammar extends GrammarDefinition {
   Parser syntaxRules() => string("syntax-rules");
   Parser ellipsis() => string("...");
 */
-  Parser<Abbrev> quote() => char("'").mapTo(Abbrev.quote);
+  Parser<AbbrevType> quote() => char("'").mapTo(.quote);
   /*  Parser<String> lambda() => string("lambda");
   Parser sIf() => string("if");
   Parser<String> setBang() => string("set!");

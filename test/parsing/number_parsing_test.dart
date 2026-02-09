@@ -24,7 +24,7 @@ void main() {
   }
 
   group("parsing numbers", () {
-    final Parser<SExpr<SNumber>> p = g.buildFrom(g.number()).end();
+    final Parser<Expr<SNumberValue>> p = g.buildFrom(g.number()).end();
 
     forAll(scheme_gen.radixes.flatMap(scheme_gen.prefixedNumStrings))
         .test("all kinds of numbers", (PrefixedNumString pns) {
@@ -33,7 +33,7 @@ void main() {
           ).succeeds(
               pns.input,
               SExprType.number,
-              SNumber.make(pns),
+              SNumberValue.make(pns),
               0,
               pns.input.length
           );

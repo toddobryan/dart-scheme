@@ -4,15 +4,15 @@ import "package:checks/context.dart";
 import "package:dart_scheme/dart_scheme/parsing/ast.dart";
 import "package:petitparser/core.dart";
 
-extension ResultSExprChecks<T> on Subject<Result<SExpr<T>>> {
-  Subject<SExpr<T>> succeeds(
+extension ResultSExprChecks<T> on Subject<Result<Expr<T>>> {
+  Subject<Expr<T>> succeeds(
       String input,
       SExprType exprType,
       T value,
       int start,
       int stop,
       ) {
-    final Subject<SExpr<T>> subj = isSuccess()
+    final Subject<Expr<T>> subj = isSuccess()
         ..value.equals(value)
         ..type.equals(exprType)
         ..input.equals(input)
@@ -46,7 +46,7 @@ extension ResultSExprChecks<T> on Subject<Result<SExpr<T>>> {
   Subject<String> get failureMessage =>
       isFailure().has((f) => f.message, "message");
 
-  Subject<SExpr<T>> isSuccess() => context.nest(() => ["is Success"], (actual) {
+  Subject<Expr<T>> isSuccess() => context.nest(() => ["is Success"], (actual) {
     if (actual is Success) {
       return Extracted.value(actual.value);
     } else {
@@ -57,12 +57,12 @@ extension ResultSExprChecks<T> on Subject<Result<SExpr<T>>> {
   });
 }
 
-extension SExprChecks<T> on Subject<SExpr<T>> {
-  Subject<T> get value => has((a) => a.value!, "value");
+extension SExprChecks<T> on Subject<Expr<T>> {
+  Subject<T> get value => has((a) => a.value, "value");
   Subject<SExprType> get type => has((a) => a.type, "type");
-  Subject<String> get input => has((t) => t.input!, "input");
-  Subject<int> get start => has((t) => t.start!, "start");
-  Subject<int> get stop => has((t) => t.stop!, "stop");
+  Subject<String> get input => has((t) => t.input, "input");
+  Subject<int> get start => has((t) => t.start, "start");
+  Subject<int> get stop => has((t) => t.stop, "stop");
 }
 
 extension ResultChecks<T> on Subject<Result<T>> {
@@ -80,7 +80,6 @@ extension ResultChecks<T> on Subject<Result<T>> {
 
   Subject<Success<T>> succeeds(T value, int position) {
     final Subject<Success<T>> subj = isSuccess;
-    print(value);
     subj.value.equals(value);
     subj.position.equals(position);
     return subj;

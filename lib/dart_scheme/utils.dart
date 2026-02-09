@@ -1,24 +1,40 @@
-import "package:collection/collection.dart";
+// TODO: have this class use an int while possible, but switch to BigInt when necessary
+class FlexInt with Compare<FlexInt> {
+  final BigInt value;
 
-class ImmutableList<T> {
-  final List<T> _list;
-  final ListEquality<T> _listEq = ListEquality<T>();
+  FlexInt._(this.value);
 
-  ImmutableList(this._list);
+  factory FlexInt.fromInt(int v) => FlexInt._(BigInt.from(v));
+  factory FlexInt.fromBigInt(BigInt v) => FlexInt._(v);
 
-  ImmutableList<T> get reversed => ImmutableList(_list.reversed.toList());
+  static FlexInt zero = FlexInt.fromBigInt(BigInt.zero);
+  static FlexInt one = FlexInt.fromBigInt(BigInt.one);
+  static FlexInt two = FlexInt.fromBigInt(BigInt.two);
+  static FlexInt maxByte = FlexInt.fromInt(255);
 
-  U fold<U>(U initValue, U Function(U, T) f) => _list.fold(initValue, f);
+  double toDouble() => value.toDouble();
 
   @override
-  String toString() => "ImmutableList($_list)";
+  int compareTo(FlexInt other) => value.compareTo(other.value);
+
+  FlexInt gcd(FlexInt other) => FlexInt.fromBigInt(value.gcd(other.value));
+
+  FlexInt operator ~/(FlexInt other) => FlexInt.fromBigInt(value ~/ other.value);
+  double operator /(FlexInt other) => value / other.value;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-          other is ImmutableList<T> &&
-              _listEq.equals(_list, other._list);
+      other is FlexInt &&
+          value == other.value;
 
   @override
-  int get hashCode => _list.hashCode;
+  int get hashCode => value.hashCode;
+}
+
+mixin Compare<T> implements Comparable<T> {
+  bool operator <=(T other) => compareTo(other) <= 0;
+  bool operator <(T other) => compareTo(other) < 0;
+  bool operator >(T other) => compareTo(other) > 0;
+  bool operator >=(T other) => compareTo(other) >= 0;
 }

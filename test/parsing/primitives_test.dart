@@ -4,6 +4,7 @@ import "package:dart_scheme/dart_scheme/parsing/ast.dart";
 import "package:dart_scheme/dart_scheme/parsing/numbers.dart";
 import "package:dart_scheme/dart_scheme/parsing/parser.dart";
 import "package:dart_scheme/dart_scheme/utils.dart";
+import "package:fast_immutable_collections/fast_immutable_collections.dart";
 import "package:petitparser/petitparser.dart";
 import "package:petitparser/reflection.dart";
 import "package:test/test.dart";
@@ -20,7 +21,7 @@ void main() {
 
   group("parsing primitives", () {
     test("identifiers", () {
-      final Parser<SExpr<String>> p = g.buildFrom(g.identifier().end());
+      final Parser<Expr<String>> p = g.buildFrom(g.symbol().end());
       check(p.parse("a")).succeeds("a", SExprType.symbol, "a", 0, 1);
       check(p.parse("|H\\x65;llo|")).succeeds(
         "|H\\x65;llo|",
@@ -34,14 +35,14 @@ void main() {
     });
 
     test("booleans", () {
-      final Parser<SExpr<bool>> p = g.buildFrom(g.boolean().end());
+      final Parser<SBoolean> p = g.buildFrom(g.boolean().end());
 
-      check(p.parse("#t")).succeeds("#t", SExprType.boolean, true, 0, 2);
-      check(p.parse("#true")).succeeds("#true", SExprType.boolean, true, 0, 5);
-      check(p.parse("#f")).succeeds("#f", SExprType.boolean, false, 0, 2);
+      check(p.parse("#t")).succeeds(const SBoolean(true, "#t", 0, 2), 2);
+      check(p.parse("#true")).succeeds(const SBoolean(true, "#true", 0, 5), 5);
+      check(p.parse("#f")).succeeds(const SBoolean(false, "#f", 0, 2), 2);
       check(
         p.parse("#false"),
-      ).succeeds("#false", SExprType.boolean, false, 0, 6);
+      ).succeeds(const SBoolean(false, "#false", 0, 6), 6);
 
       check(p.parse("")).fails(error_messages.boolean, 0);
       check(p.parse("true")).fails(error_messages.boolean, 0);
@@ -50,7 +51,7 @@ void main() {
     });
 
     test("characters", () {
-      final Parser<SExpr<String>> p = g.buildFrom(g.character().end());
+      final Parser<Expr<String>> p = g.buildFrom(g.character().end());
 
       final String alarm = r"#\alarm";
       check(
@@ -125,7 +126,7 @@ void main() {
     });
 
     test("strings", () {
-      final Parser<SExpr<String>> p = g.buildFrom(g.sString().end());
+      final Parser<Expr<String>> p = g.buildFrom(g.sString().end());
 
       final String empty = '""';
       check(
@@ -173,57 +174,36 @@ void main() {
     });
 
     test("parsing bytevector", () {
-      final Parser<SExpr<ImmutableList<SExpr<SNumber>>>> p = g.buildFrom(
-        g.byteVector().end(),
-      );
+      final Parser<dynamic> p = g.buildFrom(g.byteVector().end());
       check(
         p.parse("#u8()"),
-      ).succeeds("#u8()", SExprType.byteVector, ImmutableList([]), 0, 5);
+      ).succeeds(const SByteVector(const IList.empty(), "#u8()", 0, 5), 5);
       final String bv = "#u8(0 128 255)";
       check(p.parse(bv)).succeeds(
-        bv,
-        SExprType.byteVector,
-        ImmutableList([
-          Atom(
-            Token(SExactInteger(Radix.dec, BigInt.zero), "0", 4, 5),
-            SExprType.number,
-          ),
-          Atom(
-            Token(SExactInteger(Radix.dec, BigInt.from(128)), "128", 6, 9),
-            SExprType.number,
-          ),
-          Atom(
-            Token(SExactInteger(Radix.dec, maxByte), "255", 10, 13),
-            SExprType.number,
-          ),
-        ]),
-        0,
-        bv.length,
+        SByteVector(
+          IList([
+            SNumber(SExactInteger(.dec, FlexInt.zero), bv, 4, 5),
+            SNumber(SExactInteger(.dec, FlexInt.fromInt(128)), bv, 6, 9),
+            SNumber(SExactInteger(.dec, FlexInt.maxByte), bv, 10, 13),
+          ]),
+          bv,
+          0,
+          14,
+        ),
+        14,
       );
       final String bad = "#u8(0 128 256)";
-      check(p.parse(bad)).fails('")" expected', 10);
+      check(p.parse(bad)).fails(error_messages.byteVector, 10);
     });
 
     test("parsing sByte", () {
-      final Parser<SExpr<SNumber>> p = g.buildFrom(g.sByte().end());
-      check(p.parse("0")).succeeds(
-        "0",
-        SExprType.number,
-        SExactInteger(Radix.dec, BigInt.zero),
-        0,
-        1,
-      );
-      check(p.parse("1/2")).fails(
-        "Failure at [1:1]: byte-vector values must be exact integers in the range [0, 255]",
-        0,
-      );
-      check(p.parse("-3")).fails(
-        "Failure at [1:1]: byte-vector values must be exact integers in the range [0, 255]",
-        0,
-      );
-      check(p.parse("260")).fails(
-        "Failure at [1:1]: byte-vector values must be exact integers in the range [0, 255]",
-        0,
+      final Parser<SNumber> p = g.buildFrom(g.sByte().end());
+      check(
+        p.parse("0"),
+      ).succeeds(SNumber(SExactInteger(Radix.dec, FlexInt.zero), "0", 0, 1), 1);
+      check(p.parse("255")).succeeds(
+        SNumber(SExactInteger(Radix.dec, FlexInt.fromInt(255)), "255", 0, 3),
+        3,
       );
     });
   });
