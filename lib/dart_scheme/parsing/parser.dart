@@ -319,35 +319,35 @@ class SchemeGrammar extends GrammarDefinition {
   ].toChoiceParser();
 */
   // 7.1.3 Expressions
-/*
-  Parser<Expr<dynamic>> expression() => [
+
+  Parser<SExpr<dynamic>> expression() => [
     identifier(),
     literal(),
-    ref0(procedureCall),
+    /*ref0(procedureCall),
     ref0(lambdaExpression),
     ref0(conditional),
     ref0(assignment),
     ref0(macroUse),
     ref0(macroBlock),
-    ref0(includer),
+    ref0(includer),*/
   ].toChoiceParser();
 
-  Parser<Expr<dynamic>> literal() => [ref0(quotation), selfEvaluating()].toChoiceParser();
+  Parser<SExpr<dynamic>> literal() => [ref0(quotation), selfEvaluating()].toChoiceParser();
 
-  Parser<Expr<dynamic>> selfEvaluating() => [
+  Parser<SExpr<dynamic>> selfEvaluating() => [
     boolean(),
     number(),
     character(),
     sString(),
     byteVector(),
+  ].toChoiceParser().cast<SExpr<dynamic>>();
+
+  Parser<SQuotation<dynamic>> quotation() => [
+    seq2(ref0(quote), ref0(datum)).map2((_, d) => d).token().map(SQuotation.fromToken),
+    seq4(lParen(), string("quote"), ref0(datum), ref0(rParen)).map4((_, _, d, _) => d).token().map(SQuotation.fromToken),
   ].toChoiceParser();
 
-  Parser<Expr<dynamic>> quotation() => [
-    seq2(ref0(quote), ref0(datum)),
-    seq4(lParen(), ref0(quote), ref0(datum), ref0(rParen)),
-  ].toChoiceParser();
-
-  Parser procedureCall() =>
+  /*Parser procedureCall() =>
       seq4(lParen(), ref0(operator), ref0(operand).star(), rParen());
 
   Parser operator() => ref0(expression);
@@ -426,20 +426,19 @@ class SchemeGrammar extends GrammarDefinition {
   Parser<Datum<dynamic>> datum() => [
     ref0(simpleDatum),
     ref0(compoundDatum),
-    seq3(
-      label(),
-      char("="),
-      ref0(datum),
-    ).map3((ln, _, d) => VLabelDef(ln, d))
-        .token()
-    .map(SLabelDef.fromToken)
-    ,
-    seq2(
-      label(),
-      char("#"),
-    ).map2((ln, _) => ln)
-        .token().map(SLabelRef.fromToken),
-  ].toChoiceParser().cast<Datum<dynamic>>();
+    ref0(labelDef),
+    ref0(labelRef),
+  ].toChoiceParser();
+
+  Parser<SLabelDef<dynamic>> labelDef() =>
+    seq3(ref0(label), char("="), ref0(datum))
+        .map3((l, _, d) => (l.value, d)).token()
+        .map(SLabelDef.fromToken);
+
+  Parser<SLabelRef> labelRef() =>
+      seq2(ref0(label), char("#"))
+          .map2((l, _) => l)
+          .map(SLabelRef.fromToken);
 
   Parser<SimpleDatum<dynamic>> simpleDatum() => [
     boolean(),
@@ -447,7 +446,7 @@ class SchemeGrammar extends GrammarDefinition {
     character(),
     sString(),
     symbol(),
-    byteVector() as Parser<SByteVector>,
+    byteVector(),
   ].toChoiceParser().cast<SimpleDatum<dynamic>>();
 
   Parser<SSymbol> symbol() => identifier().map(SSymbol.fromToken);
@@ -478,10 +477,9 @@ class SchemeGrammar extends GrammarDefinition {
   Parser<SAbbreviation<dynamic>> abbreviation() => seq2(
     abbrevPrefix(),
     ref0(datum),
-  ).map2(VAbbrev.new)
-      .token().map(SAbbreviation.fromToken);
+  ).map2((abbr, dat) => (abbr, dat)).token().map(SAbbreviation.fromToken);
 
-  Parser<AbbrevType> abbrevPrefix() =>
+  Parser<SAbbrevPrefix> abbrevPrefix() =>
       [quote(), backtick(), commaAt(), comma()].toChoiceParser();
 
   Parser<SVector<dynamic>> vector() => seq3(
@@ -491,8 +489,9 @@ class SchemeGrammar extends GrammarDefinition {
   ).map3((_, ds, _) => IList(ds))
   .token().map(SVector.fromToken);
 
-  Parser<int> label() =>
-      seq2(char("#"), uinteger(Radix.dec)).map((x) => int.parse(x.$2.digits));
+  Parser<Token<int>> label() =>
+      seq2(char("#"), uinteger(Radix.dec))
+          .map2((_, l) => int.parse(l.digits)).token();
 
   // 7.1.1 Lexical Structure
 
@@ -513,7 +512,7 @@ class SchemeGrammar extends GrammarDefinition {
     dot(),
   ].toChoiceParser();
 
-  Parser delimiter() => [
+  Parser<Token<String>> delimiter() => [
     sWhitespace(),
     verticalLine(),
     lParen(),
@@ -523,65 +522,80 @@ class SchemeGrammar extends GrammarDefinition {
   ].toChoiceParser();
 
   /// Whitespace allowed inside a line
-  Parser<String> intralineWhitespace() => pattern(" \t");
+  Parser<Token<String>> intralineWhitespace() => pattern(" \t").token();
 
-  Parser<String> sWhitespace() =>
+  Parser<Token<String>> sWhitespace() =>
       [intralineWhitespace(), lineEnding()].toChoiceParser();
 
   /// A legal line-ending character or characters
-  Parser<String> lineEnding() =>
+  Parser<Token<String>> lineEnding() =>
       // ignore: always_specify_types
-      [char("\n"), string("\r\n"), char("\r")].toChoiceParser();
+      [char("\n"), string("\r\n"), char("\r")].toChoiceParser().token();
 
-  Parser<String> lParen() => char("(");
-  Parser<String> rParen() => char(")");
-  Parser<String> hashParen() => string("#(");
-  Parser<String> hashU8Paren() => string("#u8(");
-  Parser<AbbrevType> backtick() => char("`").mapTo(.backtick);
-  Parser<AbbrevType> comma() => char(",").mapTo(.comma);
-  Parser<AbbrevType> commaAt() => string(",@").mapTo(.commaAt);
+  Parser<Token<String>> lParen() => char("(").token();
+  Parser<Token<String>> rParen() => char(")").token();
+  Parser<Token<String>> hashParen() => string("#(").token();
+  Parser<Token<String>> hashU8Paren() => string("#u8(").token();
+
+  Parser<SAbbrevPrefix> quote() =>
+      char("'").mapTo(SAbbrevType.quote).token().map(SAbbrevPrefix.fromToken);
+  Parser<SAbbrevPrefix> backtick() =>
+      char("`").mapTo(SAbbrevType.backtick).token().map(SAbbrevPrefix.fromToken);
+  Parser<SAbbrevPrefix> comma() =>
+      char(",").mapTo(SAbbrevType.comma).token().map(SAbbrevPrefix.fromToken);
+  Parser<SAbbrevPrefix> commaAt() =>
+      string(",@").mapTo(SAbbrevType.commaAt).token().map(SAbbrevPrefix.fromToken);
 
   /// Parses a period
   Parser<String> dot() => char(".");
 
-  Parser<String> verticalLine() => char("|");
+  Parser<Token<String>> verticalLine() => char("|").token();
 
   /// Parses a single double-quote
-  Parser<String> doubleQuote() => char('"');
+  Parser<Token<String>> doubleQuote() => char('"').token();
 
-  Parser<String> semicolon() => char(";");
+  Parser<Token<String>> semicolon() => char(";").token();
 
-  /*
-  Parser<String> comment() => [
-    seq2(char(";"), (lineEnding().not() & any()).star()).flatten(),
+
+  Parser<SComment> comment() => [
+    seq2(char(";"), (lineEnding().not() & any()).star()).flatten().token().map(SLineComment.fromToken),
     nestedComment(),
-    seq3(string("#;"), intertokenSpace(), ref0(datum)).flatten(),
+    seq3(string("#;"), intertokenSpace(), ref0(datum)).flatten().token().map(SDatumComment.fromToken),
   ].toChoiceParser();
 
-  Parser<String> nestedComment() => seq4(
+  Parser<SNestedComment> nestedComment() => seq4(
     string("#|"),
     commentText(),
     ref0(commentCont).star(),
     string("|#"),
-  ).flatten();
+  ).flatten().token().map(SNestedComment.fromToken);
   Parser<String> commentText() => seq2(
     [string("#|"), string("|#")].toChoiceParser().not(),
     any(),
   ).flatten();
   Parser<String> commentCont() =>
       seq2(ref0(nestedComment), commentText()).flatten();
-  Parser directive() => [
-    string("#!fold-case"),
-    string("#!no-fold-case"),
-  ].toChoiceParser().and().seq([delimiter(), eof()].toChoiceParser());
+
+  Parser<SDirective> directive() => seq2(
+    [
+    string("#!fold-case").token().map(SFoldCase.fromToken),
+    string("#!no-fold-case").token().map(SNoFoldCase.fromToken),
+    ].toChoiceParser(),
+    [
+      delimiter(),
+    eof()
+  ].toChoiceParser().and()
+  ).map((dirDel) => dirDel.$1);
 
   Parser atmosphere() =>
       [sWhitespace(), comment(), directive()].toChoiceParser();
-  Parser intertokenSpace() => ref0(atmosphere).star();
-*/
-  Parser<void> eof() => endOfInput();
 
-  Parser<Token<String>> identifier() => [
+  Parser intertokenSpace() => ref0(atmosphere).star();
+
+  Parser<Token<String>> eof() =>
+      endOfInput().token().map((t) => t.mapValue((_) => ""));
+
+  Parser<SIdentifier> identifier() => [
     seq2(initial(), subsequent().star()).flatten(),
     seq3(
       verticalLine(),
@@ -589,7 +603,7 @@ class SchemeGrammar extends GrammarDefinition {
       verticalLine(),
     ).map3((_, s, _) => s),
     peculiarIdentifier(),
-  ].toChoiceParser().token();
+  ].toChoiceParser().token().map(SIdentifier.fromToken);
 
   Parser<String> initial() => [letter(), specialInitial()].toChoiceParser();
   Parser<String> specialInitial() => anyOf("!\$%*&/:<=>?@^_~");
@@ -957,9 +971,7 @@ class SchemeGrammar extends GrammarDefinition {
   Parser defineRecordType() => string("define-record-type");
   Parser syntaxRules() => string("syntax-rules");
   Parser ellipsis() => string("...");
-*/
-  Parser<AbbrevType> quote() => char("'").mapTo(.quote);
-  /*  Parser<String> lambda() => string("lambda");
+  Parser<String> lambda() => string("lambda");
   Parser sIf() => string("if");
   Parser<String> setBang() => string("set!");
   Parser<String> begin() => string("begin");

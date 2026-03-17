@@ -21,17 +21,12 @@ void main() {
 
   group("parsing primitives", () {
     test("identifiers", () {
-      final Parser<Expr<String>> p = g.buildFrom(g.symbol().end());
-      check(p.parse("a")).succeeds("a", SExprType.symbol, "a", 0, 1);
-      check(p.parse("|H\\x65;llo|")).succeeds(
-        "|H\\x65;llo|",
-        SExprType.symbol,
-        "Hello",
-        0,
-        "|H\\x65;llo|".length,
-      );
-      check(p.parse("+")).succeeds("+", SExprType.symbol, "+", 0, 1);
-      check(p.parse("a")).succeeds("a", SExprType.symbol, "a", 0, 1);
+      final Parser<SExpr<String>> p = g.buildFrom(g.symbol().end());
+      check(p.parse("a")).isSuccess().equals(const SString("a", "a", 0, 1));
+      check(p.parse("|H\\x65;llo|")).isSuccess().equals(
+        const SString("Hello", "|H\\x65;llo|", 0, "|H\\x65;llo|".length));
+      check(p.parse("+")).isSuccess().equals(const SSymbol("+", "+", 0, 1));
+      check(p.parse("a")).isSuccess().equals(const SSymbol("a", "a", 0, 1));
     });
 
     test("booleans", () {
@@ -51,7 +46,7 @@ void main() {
     });
 
     test("characters", () {
-      final Parser<Expr<String>> p = g.buildFrom(g.character().end());
+      final Parser<SExpr<String>> p = g.buildFrom(g.character().end());
 
       final String alarm = r"#\alarm";
       check(
@@ -126,7 +121,7 @@ void main() {
     });
 
     test("strings", () {
-      final Parser<Expr<String>> p = g.buildFrom(g.sString().end());
+      final Parser<SExpr<String>> p = g.buildFrom(g.sString().end());
 
       final String empty = '""';
       check(

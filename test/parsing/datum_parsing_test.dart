@@ -49,7 +49,7 @@ void main() {
     check(
         p.parse(ld)
     ).succeeds(
-        SLabelDef(VLabelDef(12, SSymbol("a", ld, 4, 5)), ld, 0, 5), 5);
+        SLabelDef((12, SSymbol("a", ld, 4, 5)), ld, 0, 5), 5);
     final String lr = "#15#";
     check(
       p.parse(lr),
