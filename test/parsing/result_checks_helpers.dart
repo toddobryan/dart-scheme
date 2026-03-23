@@ -48,7 +48,7 @@ extension SExprChecks<T> on Subject<SExpr<T>> {
   Subject<int> get stop => has((t) => t.stop, "stop");
 }
 
-extension ResultChecks<T> on Subject<Result<T>> {
+extension TokenResultChecks<T> on Subject<Result<T>> {
   Subject<Success<T>> get isSuccess {
     final Subject<Success<T>> subj = isA<Success<T>>();
     return subj;

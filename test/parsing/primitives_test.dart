@@ -46,16 +46,14 @@ void main() {
     });
 
     test("characters", () {
-      final Parser<SExpr<String>> p = g.buildFrom(g.character().end());
+      final Parser<SCharacter> p = g.buildFrom(g.character().end());
 
       final String alarm = r"#\alarm";
-      check(
-        p.parse(alarm),
-      ).succeeds(alarm, SExprType.char, "\u0007", 0, alarm.length);
+      check(p.parse(alarm)).succeeds(SCharacter("\u0007", alarm, 0, alarm.length), alarm.length);
       final String backspace = r"#\backspace";
       check(
         p.parse(backspace),
-      ).succeeds(backspace, SExprType.char, "\u0008", 0, backspace.length);
+      ).succeeds(SCharacter("\u0008", backspace, 0, backspace.length), backspace.length);
       final String delete = r"#\delete";
       check(
         p.parse(delete),

@@ -6,6 +6,7 @@ import "package:dart_scheme/dart_scheme/parsing/unparsed_numbers.dart";
 import "package:petitparser/parser.dart";
 
 import "../utils.dart";
+import "ast.dart";
 
 abstract class SNumberValue {
   final Radix radix;

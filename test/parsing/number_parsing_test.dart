@@ -24,17 +24,15 @@ void main() {
   }
 
   group("parsing numbers", () {
-    final Parser<SExpr<SNumberValue>> p = g.buildFrom(g.number()).end();
+    final Parser<SNumber> p = g.buildFrom(g.number()).end();
 
     forAll(scheme_gen.radixes.flatMap(scheme_gen.prefixedNumStrings))
         .test("all kinds of numbers", (PrefixedNumString pns) {
           check(
               p.parse(pns.input),
           ).succeeds(
-              pns.input,
-              SNumberValue.make(pns),
+              SNumber(SNumberValue.make(pns), pns.input, 0, pns.input.length),
               0,
-              pns.input.length
           );
     });
 
